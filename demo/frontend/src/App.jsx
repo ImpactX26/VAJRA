@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from './components/Icon.jsx'
 import { InjectionsPage } from './components/InjectionsPage.jsx'
-import { LiveFetchPage } from './components/LiveFetchPage.jsx'
 import { MonitorPage } from './components/MonitorPage.jsx'
 import { ConvertPage } from './components/ConvertPage.jsx'
 import { FileViewer, RunPanel, SourceEvidence } from './components/Panels.jsx'
@@ -16,7 +15,6 @@ const NAV = [
   ['home', 'Overview', href.home],
   ['attacks', 'Attacks', href.attacks],
   ['threats', 'Threats', '#/threats'],
-  ['live', 'Live fetch', '#/live'],
   ['convert', 'Secure convert', '#/convert'],
   ['sandbox', 'Sandbox', '#/sandbox'],
   ['monitor', 'Monitor', '#/monitor'],
@@ -141,10 +139,7 @@ export default function App() {
   else if (route.page === 'monitor') body = <MonitorPage />
   else if (route.page === 'threats') body = <ThreatsPage />
   else if (route.page === 'convert') body = <ConvertPage />
-  else if (route.page === 'live') {
-    body = <LiveFetchPage scenarios={scenarios} unprotected={unprotected} protectedRun={protectedRun}
-      provider={provider} providerLabel={providerLabel} controls={controls} />
-  } else if (route.page === 'how') body = <HowPage />
+  else if (route.page === 'how') body = <HowPage />
   else if (route.page === 'anatomy') body = <InjectionsPage scenarios={scenarios} currentId={route.id} />
   else if (route.page === 'results') body = <ResultsPage />
   else if (route.page === 'demo' && scenario) {

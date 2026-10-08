@@ -50,7 +50,8 @@ export function PageHeader({ eyebrow, title, lead, children }) {
 
 const FEATURES = [
   { icon: 'target', title: 'Attacks', text: 'Four injection scenarios, run side by side with and without VAJRA.', link: href.attacks },
-  { icon: 'globe', title: 'Live fetch', text: 'Ask about a real web page and watch it pass through the sandbox.', link: '#/live' },
+  { icon: 'shield-check', title: 'Threats', text: 'Five threats, the rule that stops each, and a live self-test.', link: '#/threats' },
+  { icon: 'file', title: 'Secure convert', text: 'Image to PDF with the real iLovePDF; unsafe files are burned before download.', link: '#/convert' },
   { icon: 'package', title: 'Sandbox', text: 'Tool admission checks, OS isolation and the Windows Sandbox VM.', link: '#/sandbox' },
   { icon: 'activity', title: 'Monitor', text: 'Live audit trail, alerts and continuous integrity scanning.', link: '#/monitor' },
   { icon: 'layers', title: 'How it works', text: 'The layers every tool result passes through, in order.', link: href.how },
@@ -74,7 +75,7 @@ export function HomePage() {
         </p>
         <div className="cta">
           <a className="btn primary lg" href={href.attacks}><Icon name="play" size={15} /> Watch the demos</a>
-          <a className="btn lg" href="#/live"><Icon name="globe" size={15} /> Live fetch</a>
+          <a className="btn lg" href="#/convert"><Icon name="file" size={15} /> Secure convert</a>
           <a className="btn lg" href={href.how}><Icon name="layers" size={15} /> How it works</a>
         </div>
       </section>
