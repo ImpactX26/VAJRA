@@ -110,3 +110,19 @@ async def test_merge_delivers_clean_and_burns_tampered_or_unsafe_inputs(tmp_path
     tamper(scripted, "script")
     early = await convert([("s.pdf", scripted.read_bytes()), ("b.pdf", b)], "offline", "none", "merge")
     assert early["verdict"] == "burned" and "convert" not in [s["id"] for s in early["steps"]]
+
+
+def test_damage_found_while_reading_pages_is_caught(tmp_path):
+    # A page whose content is not a stream: opening the file succeeds, reading the page reveals the damage.
+    from pypdf import PdfWriter
+    from pypdf.generic import DictionaryObject, NameObject
+
+    w = PdfWriter()
+    page = w.add_blank_page(300, 200)
+    page[NameObject("/Contents")] = w._add_object(DictionaryObject())
+    doc = tmp_path / "damaged.pdf"
+    with doc.open("wb") as f:
+        w.write(f)
+    report = scan_pdf(doc, 1, "document")
+    assert not report["safe"]
+    assert any(c["name"] == "Readable structure" and not c["ok"] for c in report["checks"])

@@ -228,7 +228,11 @@ def scan_pdf(path: Path, expect_pages: int | None, profile: str = "images") -> d
     except Exception as e:  # strict parsing: any structural error is a failure, not something to repair
         r.check("Readable structure", False, f"parser error ({type(e).__name__})")
         return r.finish()
-    r.check("Readable structure", not warnings, "no parser errors or repairs" if not warnings else f"{len(warnings)} parser warning(s)")
+
+    def structure() -> None:
+        # Evaluated last: reading pages, text and images can surface damage that opening the file did not.
+        r.check("Readable structure", not warnings,
+                "no parser errors or repairs" if not warnings else f"{len(warnings)} parser warning(s): the file is damaged or malformed")
 
     for kind in sorted(raw_names):
         found.setdefault(kind, 1)
@@ -253,7 +257,9 @@ def scan_pdf(path: Path, expect_pages: int | None, profile: str = "images") -> d
                 "all text is drawn visibly" if not invisible else f"{invisible} invisible or microscopic text instruction(s)")
         if invisible:
             r.removed("invisible text", invisible)
-        return r.finish(pages=len(pages), page_text=[page_text_fingerprint(p) for p in pages])
+        page_text = [page_text_fingerprint(p) for p in pages]
+        structure()
+        return r.finish(pages=len(pages), page_text=page_text)
 
     text_ops = sum(_page_text_ops(p) for p in pages)
     fonts = sum(1 for p in pages if "/Font" in (p.get("/Resources") or {}))
@@ -279,6 +285,7 @@ def scan_pdf(path: Path, expect_pages: int | None, profile: str = "images") -> d
     r.check("Only images and no overlays", images >= len(pages) and not others and annots == 0,
             f"{images} image(s)" + (f", other objects: {', '.join(sorted(others))}" if others else "")
             + (f", {annots} annotation(s)" if annots else ""))
+    structure()
     return r.finish(pages=len(pages))
 
 
