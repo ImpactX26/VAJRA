@@ -2,12 +2,27 @@ import { useEffect, useRef, useState } from 'react'
 import { PageHeader } from '../pages.jsx'
 import { Icon } from './Icon.jsx'
 
-// Secure convert: a real third-party tool (iLovePDF) turns images into a PDF, and VAJRA checks
-// both the image going in and the PDF coming out before anything reaches the user's device.
+// Secure convert: a real third-party tool (iLovePDF) turns images into a PDF or merges PDFs, and
+// VAJRA checks both the files going in and the PDF coming out before anything reaches the user's device.
+
+const OPS = {
+  imagepdf: {
+    label: 'Image to PDF', min: 1, input: 'Your image', check: 'Image check', verb: 'Converting',
+    accept: 'image/jpeg,image/png,image/webp', pick: 'Choose images',
+    hint: 'JPG, PNG or WEBP, up to 10 images. On a phone you can take a photo.',
+    ok: (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name),
+  },
+  merge: {
+    label: 'Merge PDFs', min: 2, input: 'Your PDFs', check: 'PDF check', verb: 'Merging',
+    accept: 'application/pdf,.pdf', pick: 'Choose PDFs',
+    hint: 'Two to ten PDF files. They are merged in the order shown.',
+    ok: (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name),
+  },
+}
 
 const STAGES = [
-  { id: 'receive', label: 'Your image', icon: 'image' },
-  { id: 'image', label: 'Image check', icon: 'search' },
+  { id: 'receive', icon: 'image' },
+  { id: 'image', icon: 'search' },
   { id: 'convert', label: 'PDF tool', icon: 'tool' },
   { id: 'scan', label: 'Sandbox scan', icon: 'shield' },
   { id: 'final', label: 'Your device', icon: 'download' },
@@ -17,8 +32,9 @@ function fmtBytes(n) {
   return n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`
 }
 
-export function ConvertPage() {
+export function ConvertPage({ initial }) {
   const [status, setStatus] = useState(null)
+  const [op, setOp] = useState(initial === 'merge' ? 'merge' : 'imagepdf')
   const [files, setFiles] = useState([])
   const [engine, setEngine] = useState('ilovepdf')
   const [tamper, setTamper] = useState('none')
@@ -49,11 +65,27 @@ export function ConvertPage() {
   useEffect(() => () => files.forEach((f) => URL.revokeObjectURL(f.url)), [files])
 
   const pick = (list) => {
-    const imgs = [...list].filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name)).slice(0, 10)
-    setFiles(imgs.map((file) => ({ file, url: URL.createObjectURL(file) })))
+    const chosen = [...list].filter(OPS[op].ok).slice(0, 10)
+    setFiles(chosen.map((file) => ({ file, url: URL.createObjectURL(file) })))
     setReport(null)
     setError(null)
   }
+
+  const switchOp = (next) => {
+    if (next === op) return
+    setOp(next)
+    setFiles([])
+    setReport(null)
+    setError(null)
+  }
+
+  const move = (i, d) => setFiles((fs) => {
+    const j = i + d
+    if (j < 0 || j >= fs.length) return fs
+    const out = [...fs]
+    ;[out[i], out[j]] = [out[j], out[i]]
+    return out
+  })
 
   const run = async () => {
     setBusy(true)
@@ -62,6 +94,7 @@ export function ConvertPage() {
     const form = new FormData()
     files.forEach(({ file }) => form.append('files', file, file.name))
     form.append('engine', engine)
+    form.append('operation', op)
     form.append('tamper', tamper)
     try {
       const r = await fetch('/api/convert', { method: 'POST', body: form })
@@ -90,17 +123,26 @@ export function ConvertPage() {
     return 'idle'
   }
   const engineName = engine === 'ilovepdf' ? 'iLovePDF' : 'Offline converter'
+  const o = OPS[op]
+  const ready = files.length >= o.min
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Real tool"
         title="Secure convert"
-        lead="Turn a photo into a PDF with iLovePDF, a real online tool. VAJRA checks your image before it leaves, and checks the PDF that comes back before it reaches your device. Anything unsafe is burned in the sandbox."
+        lead="Turn photos into a PDF or merge PDFs with iLovePDF, a real online tool. VAJRA checks your files before they leave, and checks the PDF that comes back before it reaches your device. Anything unsafe is burned in the sandbox."
       />
 
       <div className="cv-layout">
         <section className="panel cv-input">
+          <div className="cv-ops" role="tablist" aria-label="PDF task">
+            {Object.entries(OPS).map(([id, def]) => (
+              <button key={id} role="tab" aria-selected={op === id} className={op === id ? 'on' : ''} onClick={() => switchOp(id)} disabled={busy}>
+                <Icon name={id === 'merge' ? 'layers' : 'image'} size={14} /> {def.label}
+              </button>
+            ))}
+          </div>
           <div
             className={`cv-drop ${drag ? 'drag' : ''}`}
             onClick={() => input.current?.click()}
@@ -112,12 +154,32 @@ export function ConvertPage() {
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
           >
             <Icon name="upload" size={26} />
-            <strong>Choose images</strong>
-            <span>JPG, PNG or WEBP, up to 10 images. On a phone you can take a photo.</span>
-            <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => pick(e.target.files)} />
+            <strong>{o.pick}</strong>
+            <span>{o.hint}</span>
+            <input key={op} ref={input} type="file" accept={o.accept} multiple hidden onChange={(e) => pick(e.target.files)} />
           </div>
 
-          {files.length > 0 && (
+          {op === 'merge' && files.length > 0 && (
+            <ol className="cv-files">
+              {files.map(({ file, url }, i) => (
+                <li key={url}>
+                  <span className="cv-order">{i + 1}</span>
+                  <Icon name="file" size={16} />
+                  <span className="cv-fname" title={file.name}>{file.name}</span>
+                  <small>{fmtBytes(file.size)}</small>
+                  <button className="cv-mv" onClick={() => move(i, -1)} disabled={i === 0 || busy} aria-label={`Move ${file.name} up`}>
+                    <Icon name="chevron-down" size={14} style={{ transform: 'rotate(180deg)' }} />
+                  </button>
+                  <button className="cv-mv" onClick={() => move(i, 1)} disabled={i === files.length - 1 || busy} aria-label={`Move ${file.name} down`}>
+                    <Icon name="chevron-down" size={14} />
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+          {op === 'merge' && files.length === 1 && <p className="cv-hint muted">Add at least one more PDF to merge.</p>}
+
+          {op === 'imagepdf' && files.length > 0 && (
             <ul className="cv-thumbs">
               {files.map(({ file, url }) => (
                 <li key={url}>
@@ -157,9 +219,9 @@ export function ConvertPage() {
             </select>
           </details>
 
-          <button className="btn primary cv-go" disabled={!files.length || busy} onClick={run}>
+          <button className="btn primary cv-go" disabled={!ready || busy} onClick={run}>
             <Icon name={busy ? 'refresh' : 'shield-check'} size={15} />
-            {busy ? `Converting with ${engineName}` : 'Convert securely'}
+            {busy ? `${o.verb} with ${engineName}` : op === 'merge' ? 'Merge securely' : 'Convert securely'}
           </button>
           {error && <p className="cv-error"><Icon name="alert" size={14} /> {error}</p>}
         </section>
@@ -168,7 +230,8 @@ export function ConvertPage() {
           <ol className="cv-stages">
             {STAGES.map((s, i) => {
               const st = stageState(s.id)
-              const label = s.id === 'convert' ? engineName : s.id === 'final' && report && done && report.verdict !== 'delivered' ? 'Burned' : s.label
+              const label = s.id === 'receive' ? o.input : s.id === 'image' ? o.check : s.id === 'convert' ? engineName
+                : s.id === 'final' && report && done && report.verdict !== 'delivered' ? 'Burned' : s.label
               return (
                 <li key={s.id} className={`cv-stage ${st}`}>
                   <span className="cv-node">
@@ -184,9 +247,9 @@ export function ConvertPage() {
           </ol>
 
           {!report && !busy && (
-            <p className="cv-empty muted">Choose an image and press Convert securely. Each step appears here as VAJRA runs it.</p>
+            <p className="cv-empty muted">{op === 'merge' ? 'Choose two or more PDFs and press Merge securely.' : 'Choose an image and press Convert securely.'} Each step appears here as VAJRA runs it.</p>
           )}
-          {busy && <p className="cv-empty muted">Working: checking your image, converting, then scanning the result.</p>}
+          {busy && <p className="cv-empty muted">Working: checking your files, running {engineName}, then scanning the result.</p>}
 
           {report && (
             <ul className="cv-log">
@@ -234,11 +297,14 @@ export function ConvertPage() {
             </div>
           )}
 
-          {done && (report.scan || report.images) && (
+          {done && (report.scan || report.images || report.inputs) && (
             <details className="cv-detail" open={report.verdict === 'burned'}>
               <summary>What the sandbox checked</summary>
               {report.images?.map((im) => (
                 <CheckList key={im.fingerprint || im.name} title={`Image: ${im.name}`} rep={im} />
+              ))}
+              {report.inputs?.map((im, i) => (
+                <CheckList key={`${i}-${im.fingerprint}`} title={`Your PDF: ${im.name}`} rep={im} />
               ))}
               {report.scan && <CheckList title="PDF returned by the tool" rep={report.scan} />}
             </details>
@@ -257,6 +323,11 @@ function CheckList({ title, rep }) {
         {rep.checks?.map((c) => (
           <li key={c.name} className={c.ok ? 'ok' : 'bad'}>
             <Icon name={c.ok ? 'check' : 'x'} size={13} /> <strong>{c.name}</strong> <span>{c.detail}</span>
+          </li>
+        ))}
+        {rep.notes?.map((n) => (
+          <li key={n} className="note">
+            <Icon name="info" size={13} /> <strong>Noted</strong> <span>{n} (allowed in documents; runs nothing)</span>
           </li>
         ))}
         {rep.removed?.map((r) => (

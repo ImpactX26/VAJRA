@@ -138,7 +138,7 @@ export default function App() {
   else if (route.page === 'sandbox') body = <SandboxPage />
   else if (route.page === 'monitor') body = <MonitorPage />
   else if (route.page === 'threats') body = <ThreatsPage />
-  else if (route.page === 'convert') body = <ConvertPage />
+  else if (route.page === 'convert') body = <ConvertPage initial={route.id} />
   else if (route.page === 'how') body = <HowPage />
   else if (route.page === 'anatomy') body = <InjectionsPage scenarios={scenarios} currentId={route.id} />
   else if (route.page === 'results') body = <ResultsPage />

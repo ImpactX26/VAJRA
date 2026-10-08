@@ -249,19 +249,21 @@ async def audit_stream(request: Request) -> Any:
 
 
 async def convert_status(request: Request) -> JSONResponse:
-    from .convert import ENGINES, TAMPER_TESTS, ilovepdf_ready
+    from .convert import ENGINES, OPERATIONS, TAMPER_TESTS, ilovepdf_ready
 
-    return JSONResponse({"ilovepdf": ilovepdf_ready(), "engines": list(ENGINES), "tamper_tests": TAMPER_TESTS})
+    return JSONResponse({"ilovepdf": ilovepdf_ready(), "engines": list(ENGINES), "tamper_tests": TAMPER_TESTS,
+                         "operations": {k: v["title"] for k, v in OPERATIONS.items()}})
 
 
 async def convert_run(request: Request) -> JSONResponse:
-    """Image(s) to PDF through the PDF tool, with VAJRA checking everything before delivery."""
-    from .convert import ENGINES, MAX_IMAGES, MAX_UPLOAD, TAMPER_TESTS, convert
+    """A PDF task (image to PDF, merge) through the PDF tool, with VAJRA checking everything before delivery."""
+    from .convert import ENGINES, MAX_IMAGES, MAX_UPLOAD, OPERATIONS, TAMPER_TESTS, convert
 
     form = await request.form(max_files=MAX_IMAGES + 1)
     engine, how = str(form.get("engine", "ilovepdf")), str(form.get("tamper", "none"))
-    if engine not in ENGINES or how not in TAMPER_TESTS:
-        return JSONResponse({"error": "bad engine or test"}, status_code=400)
+    operation = str(form.get("operation", "imagepdf"))
+    if engine not in ENGINES or how not in TAMPER_TESTS or operation not in OPERATIONS:
+        return JSONResponse({"error": "bad operation, engine or test"}, status_code=400)
     uploads = []
     for f in form.getlist("files"):
         if hasattr(f, "read"):
@@ -269,7 +271,7 @@ async def convert_run(request: Request) -> JSONResponse:
             if len(data) > MAX_UPLOAD:
                 return JSONResponse({"error": f"{f.filename} is larger than {MAX_UPLOAD // 2**20} MB"}, status_code=413)
             uploads.append((f.filename or "image", data))
-    return JSONResponse(await convert(uploads, engine, how))
+    return JSONResponse(await convert(uploads, engine, how, operation))
 
 
 async def convert_file(request: Request) -> Response:

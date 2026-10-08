@@ -5,6 +5,7 @@ the parser takes down only the jailed process:
 
     python filescan.py image <in> --clean-out <out>     # check an image and re-encode it without metadata
     python filescan.py pdf <in> --expect-pages N        # check a PDF produced from N images
+    python filescan.py pdf <in> --profile document      # check an ordinary PDF (text allowed, hidden text not)
 
 It prints one JSON report on stdout. Like the rest of VAJRA, it never judges what text
 *means*: it checks what a file is made of against what that kind of file should contain.
@@ -47,6 +48,7 @@ ACTIVE_NAMES = {
     "/Sound": "embedded media",
 }
 NAME_RE = re.compile(rb"/[A-Za-z0-9#._-]+")
+DOCUMENT_ALLOWED = frozenset({"web link", "interactive form"})
 
 
 def fingerprint(data: bytes) -> str:
@@ -175,7 +177,27 @@ def _page_text_ops(page: Any) -> int:
     return len(re.findall(rb"(?<![A-Za-z])(Tj|TJ|'|\")(?![A-Za-z])", raw)) + len(re.findall(rb"(?<![A-Za-z])BT(?![A-Za-z])", raw))
 
 
-def scan_pdf(path: Path, expect_pages: int | None) -> dict[str, Any]:
+INVISIBLE_RE = re.compile(rb"(?<![\w.])3\s+Tr(?![A-Za-z])")
+TINY_FONT_RE = re.compile(rb"(?<![\w.])(0?\.\d+|0)\s+Tf(?![A-Za-z])")
+
+
+def _invisible_text_ops(page: Any) -> int:
+    """Text drawn in invisible mode (3 Tr) or at a size below one point."""
+    contents = page.get_contents()
+    if contents is None:
+        return 0
+    raw = contents.get_data()
+    return len(INVISIBLE_RE.findall(raw)) + len(TINY_FONT_RE.findall(raw))
+
+
+def page_text_fingerprint(page: Any) -> str:
+    """Fingerprint of a page's readable text, ignoring layout whitespace, to prove a tool added no text."""
+    text = re.sub(r"\s+", "", page.extract_text() or "")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def scan_pdf(path: Path, expect_pages: int | None, profile: str = "images") -> dict[str, Any]:
+    """``profile``: "images" for a PDF built from pictures (no text allowed), "document" for ordinary PDFs."""
     from pypdf import PdfReader
 
     data = path.read_bytes()
@@ -210,11 +232,28 @@ def scan_pdf(path: Path, expect_pages: int | None) -> dict[str, Any]:
 
     for kind in sorted(raw_names):
         found.setdefault(kind, 1)
+    if profile == "document":
+        # Ordinary documents often have links and fillable forms: report them, but they do not run anything.
+        notes = {k: found.pop(k) for k in list(found) if k in DOCUMENT_ALLOWED}
+        r.out["notes"] = [f"{k} ({n})" for k, n in sorted(notes.items())]
     r.check("No active content", not found,
-            "no scripts, actions, links, forms or attachments" if not found else "; ".join(f"{k} ({n})" for k, n in sorted(found.items())))
+            "no scripts, actions, links, forms or attachments" if not found and profile == "images"
+            else "no scripts, automatic actions or attachments" if not found
+            else "; ".join(f"{k} ({n})" for k, n in sorted(found.items())))
 
     if expect_pages is not None:
-        r.check("One page per image", len(pages) == expect_pages, f"{len(pages)} page(s), expected {expect_pages}")
+        label = "One page per image" if profile == "images" else "Page count"
+        r.check(label, len(pages) == expect_pages, f"{len(pages)} page(s), expected {expect_pages}")
+
+    if profile == "document":
+        invisible = sum(_invisible_text_ops(p) for p in pages)
+        # Text a person cannot see, but a program reading the file can: the classic hiding place
+        # for instructions aimed at AI tools that read the document later.
+        r.check("No invisible text", invisible == 0,
+                "all text is drawn visibly" if not invisible else f"{invisible} invisible or microscopic text instruction(s)")
+        if invisible:
+            r.removed("invisible text", invisible)
+        return r.finish(pages=len(pages), page_text=[page_text_fingerprint(p) for p in pages])
 
     text_ops = sum(_page_text_ops(p) for p in pages)
     fonts = sum(1 for p in pages if "/Font" in (p.get("/Resources") or {}))
@@ -252,9 +291,10 @@ def main(argv: list[str] | None = None) -> int:
     pdf = sub.add_parser("pdf")
     pdf.add_argument("path", type=Path)
     pdf.add_argument("--expect-pages", type=int)
+    pdf.add_argument("--profile", choices=["images", "document"], default="images")
     a = p.parse_args(argv)
     try:
-        report = scan_image(a.path, a.clean_out) if a.mode == "image" else scan_pdf(a.path, a.expect_pages)
+        report = scan_image(a.path, a.clean_out) if a.mode == "image" else scan_pdf(a.path, a.expect_pages, a.profile)
     except Exception as e:  # never crash silently: an unscannable file is an unsafe file
         report = {"kind": a.mode, "safe": False, "checks": [{"name": "Scanner", "ok": False, "detail": type(e).__name__}], "removed": []}
     json.dump(report, sys.stdout)

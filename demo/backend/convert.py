@@ -1,7 +1,10 @@
-"""Secure convert: image to PDF through a real third-party tool (iLovePDF), with VAJRA in between.
+"""Secure convert: PDF tasks through a real third-party tool (iLovePDF), with VAJRA in between.
 
-    user image -> image check (jailed) -> clean copy -> pdf tool via MCP (jailed, admitted)
+    user files -> input check (jailed) -> pdf tool via MCP (jailed, admitted)
                -> quarantine -> PDF scan (jailed) -> burn | deliver to the user's device
+
+Operations: "imagepdf" (images to one PDF; images are rebuilt from pixels first) and
+"merge" (two or more PDFs into one; the result must contain exactly the inputs' text).
 
 Nothing the tool returns reaches the user until the file sandbox has passed it. A file
 that fails is burned: overwritten and deleted, leaving only its fingerprint in the audit trail.
@@ -40,6 +43,10 @@ KEEP_SECONDS = 30 * 60
 MAX_IMAGES = 10
 MAX_UPLOAD = 15 * 1024 * 1024
 ENGINES = ("ilovepdf", "offline")
+OPERATIONS = {
+    "imagepdf": {"title": "Image to PDF", "tool": "image_to_pdf", "arg": "images", "min": 1, "noun": "image"},
+    "merge": {"title": "Merge PDFs", "tool": "merge_pdfs", "arg": "files", "min": 2, "noun": "PDF"},
+}
 
 TAMPER_TESTS = {
     "none": "None: deliver what the tool returns",
@@ -111,10 +118,15 @@ def tamper(path: Path, how: str) -> None:
         page = writer.pages[0]
         font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
                                  NameObject("/BaseFont"): NameObject("/Helvetica")})
+        if "/Resources" not in page:
+            page[NameObject("/Resources")] = DictionaryObject()
         resources = page["/Resources"].get_object()
-        resources[NameObject("/Font")] = DictionaryObject({NameObject("/FV"): writer._add_object(font)})
+        fonts = resources.get("/Font")
+        fonts = fonts.get_object() if fonts is not None else DictionaryObject()
+        fonts[NameObject("/FVajraTest")] = writer._add_object(font)
+        resources[NameObject("/Font")] = fonts
         text = DecodedStreamObject()
-        text.set_data(b"BT /FV 1 Tf 3 Tr 5 5 Td (VAJRA test marker: text that is not in the image) Tj ET")  # 3 Tr = invisible
+        text.set_data(b"BT /FVajraTest 1 Tf 3 Tr 5 5 Td (VAJRA test marker: text that is not in your file) Tj ET")  # 3 Tr = invisible
         existing = page["/Contents"]
         parts = list(existing.get_object()) if isinstance(existing.get_object(), ArrayObject) else [existing]
         page[NameObject("/Contents")] = ArrayObject([*parts, writer._add_object(text)])
@@ -131,7 +143,8 @@ def _safe_name(name: str) -> str:
     return stem
 
 
-async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: str) -> dict[str, Any]:
+async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: str, operation: str = "imagepdf") -> dict[str, Any]:
+    op = OPERATIONS[operation]
     cleanup_old()
     job = secrets.token_hex(6)
     folder = WORK / job
@@ -139,7 +152,7 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
     for d in (incoming, clean, quarantine, DELIVERED):
         d.mkdir(parents=True, exist_ok=True)
     steps: list[dict[str, Any]] = []
-    report: dict[str, Any] = {"job": job, "engine": engine, "tamper": tamper_with, "steps": steps}
+    report: dict[str, Any] = {"job": job, "operation": operation, "engine": engine, "tamper": tamper_with, "steps": steps}
 
     def step(sid: str, title: str, ok: bool, detail: str, **extra: Any) -> bool:
         steps.append({"id": sid, "title": title, "ok": ok, "detail": detail, **extra})
@@ -152,8 +165,8 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
 
     try:
         # 1. Receive -----------------------------------------------------------
-        if not uploads or len(uploads) > MAX_IMAGES:
-            step("receive", "Receive", False, f"send between 1 and {MAX_IMAGES} images")
+        if not op["min"] <= len(uploads) <= MAX_IMAGES:
+            step("receive", "Receive", False, f"send between {op['min']} and {MAX_IMAGES} {op['noun']} files")
             return finish("rejected", "wrong number of files")
         names = []
         for i, (name, data) in enumerate(uploads):
@@ -161,38 +174,44 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
             target.write_bytes(data)
             names.append(target)
         total = sum(len(d) for _, d in uploads)
-        TRAIL.record("file.receive", job=job, files=len(uploads), bytes=total)
-        step("receive", "Receive", True, f"{len(uploads)} image(s), {total / 1e6:.2f} MB, held in VAJRA's work area")
+        TRAIL.record("file.receive", job=job, operation=operation, files=len(uploads), bytes=total)
+        step("receive", "Receive", True, f"{len(uploads)} {op['noun']}(s), {total / 1e6:.2f} MB, held in VAJRA's work area")
 
-        # 2. Image check, inside the jail ----------------------------------------
-        image_reports = []
-        cleaned: list[str] = []
-        for i, src in enumerate(names):
-            ext_out = clean / f"{i:02d}.img"
-            rep = await asyncio.to_thread(_scan, ["image", str(src), "--clean-out", str(ext_out)])
-            rep["name"] = uploads[i][0]
-            image_reports.append(rep)
-            if rep.get("safe"):
-                final = ext_out.with_suffix(".png" if rep.get("clean_format") == "PNG" else ".jpg")
-                ext_out.rename(final)
-                cleaned.append(final.name)
-        report["images"] = image_reports
-        bad = [r for r in image_reports if not r.get("safe")]
-        removed = sum(len(r.get("removed", [])) for r in image_reports)
-        TRAIL.record("file.check", job=job, file="image", safe=not bad, removed=removed,
-                     fingerprints=[r.get("fingerprint") for r in image_reports])
-        if not step("image", "Check your image", not bad,
-                    f"{len(bad)} image(s) failed the check" if bad else
-                    f"well-formed; rebuilt from pixels only" + (f", {removed} metadata block(s) removed" if removed else "")):
-            _burn_tree(folder)
-            TRAIL.record("file.burn", job=job, stage="image", fingerprints=[r.get("fingerprint") for r in bad])
-            return finish("burned", "the image itself failed the check, so it was never sent to the tool")
-        for p in names:
-            burn(p)  # the originals are no longer needed: only the rebuilt copies go to the tool
+        # 2. Input check, inside the jail ----------------------------------------
+        if operation == "merge":
+            pdf_reports = []
+            for i, src in enumerate(names):
+                rep = await asyncio.to_thread(_scan, ["pdf", str(src), "--profile", "document"])
+                rep["name"] = uploads[i][0]
+                pdf_reports.append(rep)
+            report["inputs"] = pdf_reports
+            bad = [r for r in pdf_reports if not r.get("safe")]
+            TRAIL.record("file.check", job=job, file="input pdf", safe=not bad,
+                         fingerprints=[r.get("fingerprint") for r in pdf_reports])
+            pages_in = sum(r.get("pages", 0) for r in pdf_reports)
+            if not step("image", "Check your PDFs", not bad,
+                        f"{len(bad)} of {len(names)} PDF(s) failed the check" if bad else
+                        f"{len(names)} PDFs, {pages_in} page(s): no scripts, actions, attachments or invisible text"):
+                _burn_tree(folder)
+                TRAIL.record("file.burn", job=job, stage="input", fingerprints=[r.get("fingerprint") for r in bad])
+                step("burn", "Burned in the sandbox", True, "the unsafe PDF was never sent to the tool; overwritten and deleted")
+                return finish("burned", "; ".join(f"{r['name']}: " + ", ".join(c["name"] for c in r["checks"] if not c["ok"]) for r in bad))
+            cleaned = []
+            for i, src in enumerate(names):
+                target = clean / f"{i + 1:02d}_{_safe_name(uploads[i][0])}.pdf"
+                src.rename(target)
+                cleaned.append(target.name)
+            expected_text = [fp for r in pdf_reports for fp in r.get("page_text", [])]
+        else:
+            cleaned = await _check_images(job, names, uploads, clean, report, step)
+            pages_in = len(cleaned or [])
+            if cleaned is None:
+                _burn_tree(folder)
+                return finish("burned", "the image itself failed the check, so it was never sent to the tool")
 
-        # 3. Convert through the PDF tool, via VAJRA's MCP proxy -------------------
+        # 3. Run the PDF tool, via VAJRA's MCP proxy -------------------------------
         if engine == "ilovepdf" and not ilovepdf_ready():
-            step("convert", "Convert with iLovePDF", False, "ILOVEPDF_PUBLIC_KEY is not set in .env")
+            step("convert", "iLovePDF", False, "ILOVEPDF_PUBLIC_KEY is not set in .env")
             _burn_tree(folder)
             return finish("error", "iLovePDF key missing")
         env = {"VAJRA_PDF_INCOMING": str(clean), "VAJRA_PDF_OUTPUT": str(quarantine)}
@@ -203,21 +222,22 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
         async with UpstreamManager(cfg, trail=TRAIL, limits=TOOL_LIMITS) as ups:
             admissions = [{"tool": a.tool, "admitted": a.admitted, "reason": a.reason} for a in ups.admissions]
             up = ups.upstreams["pdf"]
-            if "image_to_pdf" not in up.tools:
-                step("convert", "Convert", False, "the tool was not admitted by the sandbox", admissions=admissions)
+            if op["tool"] not in up.tools:
+                step("convert", "PDF tool", False, "the tool was not admitted by the sandbox", admissions=admissions)
                 _burn_tree(folder)
                 return finish("burned", "tool rejected at admission")
-            TRAIL.record("call", session=job, tool="pdf/image_to_pdf", arg_labels={"images": "trusted", "engine": "trusted"})
-            result = await up.client.call_tool("image_to_pdf", {"images": cleaned, "engine": engine})
+            TRAIL.record("call", session=job, tool=f"pdf/{op['tool']}", arg_labels={op["arg"]: "trusted", "engine": "trusted"})
+            result = await up.client.call_tool(op["tool"], {op["arg"]: cleaned, "engine": engine})
         if result.is_error:
-            step("convert", "Convert", False, f"the tool reported an error: {_text(result)[:200]}", admissions=admissions)
+            step("convert", "PDF tool", False, f"the tool reported an error: {_text(result)[:200]}", admissions=admissions)
             _burn_tree(folder)
-            return finish("error", "conversion failed")
+            return finish("error", "the tool failed")
         info = json.loads(_text(result))
         report["conversion"] = info
-        TRAIL.record("file.convert", job=job, converter=info.get("converter"), bytes=info.get("bytes"),
+        TRAIL.record("file.convert", job=job, operation=operation, converter=info.get("converter"), bytes=info.get("bytes"),
                      seconds=round(time.monotonic() - started, 1))
-        step("convert", f"Convert with {info.get('converter')}", True,
+        verb = "Merge" if operation == "merge" else "Convert"
+        step("convert", f"{verb} with {info.get('converter')}", True,
              f"{info.get('bytes', 0) / 1e3:.0f} KB returned in {time.monotonic() - started:.1f}s; held in quarantine, marked untrusted",
              admissions=admissions, isolation=up.isolation)
 
@@ -227,7 +247,15 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
             step("tamper", "Test: file changed in transit", True, TAMPER_TESTS[tamper_with], test=True)
 
         # 4. PDF scan, inside the jail --------------------------------------------
-        scan = await asyncio.to_thread(_scan, ["pdf", str(pdf), "--expect-pages", str(len(cleaned))])
+        profile = "document" if operation == "merge" else "images"
+        scan = await asyncio.to_thread(_scan, ["pdf", str(pdf), "--profile", profile, "--expect-pages", str(pages_in)])
+        if operation == "merge" and "page_text" in scan:
+            # The tool may only rearrange what it was given: every page's text must match an input page, in order.
+            same = scan["page_text"] == expected_text
+            changed = sum(a != b for a, b in zip(scan["page_text"], expected_text)) + abs(len(scan["page_text"]) - len(expected_text))
+            scan["checks"].append({"name": "Same content as your files", "ok": same,
+                                   "detail": "every page's text matches your PDFs" if same else f"{changed} page(s) differ from your PDFs"})
+            scan["safe"] = bool(scan.get("safe")) and same
         report["scan"] = scan
         failed = [c for c in scan.get("checks", []) if not c["ok"]]
         TRAIL.record("file.check", job=job, file="pdf", safe=bool(scan.get("safe")), fingerprint=scan.get("fingerprint"),
@@ -241,7 +269,7 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
 
         # 5. Deliver ---------------------------------------------------------------
         token = secrets.token_hex(16)
-        filename = (_safe_name(uploads[0][0]) if len(uploads) == 1 else "images") + ".pdf"
+        filename = "merged.pdf" if operation == "merge" else (_safe_name(uploads[0][0]) if len(uploads) == 1 else "images") + ".pdf"
         shutil.move(pdf, DELIVERED / f"{token}.pdf")
         (DELIVERED / f"{token}.json").write_text(json.dumps({"filename": filename}), encoding="utf-8")
         _burn_tree(folder)
@@ -256,6 +284,35 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
         if folder.exists():
             _burn_tree(folder)
         return finish("error", type(e).__name__)
+
+
+async def _check_images(job: str, names: list[Path], uploads: list[tuple[str, bytes]], clean: Path,
+                        report: dict[str, Any], step: Any) -> list[str] | None:
+    """Check each image in the jail and rebuild it from pixels. Returns the rebuilt file names, or None if any failed."""
+    image_reports = []
+    cleaned: list[str] = []
+    for i, src in enumerate(names):
+        ext_out = clean / f"{i:02d}.img"
+        rep = await asyncio.to_thread(_scan, ["image", str(src), "--clean-out", str(ext_out)])
+        rep["name"] = uploads[i][0]
+        image_reports.append(rep)
+        if rep.get("safe"):
+            final = ext_out.with_suffix(".png" if rep.get("clean_format") == "PNG" else ".jpg")
+            ext_out.rename(final)
+            cleaned.append(final.name)
+    report["images"] = image_reports
+    bad = [r for r in image_reports if not r.get("safe")]
+    removed = sum(len(r.get("removed", [])) for r in image_reports)
+    TRAIL.record("file.check", job=job, file="image", safe=not bad, removed=removed,
+                 fingerprints=[r.get("fingerprint") for r in image_reports])
+    if not step("image", "Check your image", not bad,
+                f"{len(bad)} image(s) failed the check" if bad else
+                "well-formed; rebuilt from pixels only" + (f", {removed} metadata block(s) removed" if removed else "")):
+        TRAIL.record("file.burn", job=job, stage="image", fingerprints=[r.get("fingerprint") for r in bad])
+        return None
+    for p in names:
+        burn(p)  # the originals are no longer needed: only the rebuilt copies go to the tool
+    return cleaned
 
 
 def delivered_file(token: str) -> tuple[Path, str] | None:

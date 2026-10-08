@@ -66,3 +66,47 @@ async def test_pipeline_delivers_clean_and_burns_tampered():
     bad = await convert([("photo.jpg", _jpeg())], "offline", "script")
     assert bad["verdict"] == "burned" and "download" not in bad
     assert [s["id"] for s in bad["steps"]][-1] == "burn"
+
+
+def text_pdf(lines: list[str]) -> bytes:
+    """A small ordinary PDF with one line of visible text per page."""
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    w = PdfWriter()
+    for line in lines:
+        page = w.add_blank_page(300, 200)
+        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+                                 NameObject("/BaseFont"): NameObject("/Helvetica")})
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): w._add_object(font)})})
+        stream = DecodedStreamObject()
+        stream.set_data(b"BT /F1 12 Tf 20 100 Td (" + line.encode() + b") Tj ET")
+        page[NameObject("/Contents")] = w._add_object(stream)
+    buf = io.BytesIO()
+    w.write(buf)
+    return buf.getvalue()
+
+
+def test_document_profile_allows_visible_text_but_not_invisible(tmp_path):
+    doc = tmp_path / "doc.pdf"
+    doc.write_bytes(text_pdf(["Quarterly report", "Page two"]))
+    assert scan_pdf(doc, 2, "document")["safe"]
+    tamper(doc, "hidden_text")
+    report = scan_pdf(doc, 2, "document")
+    assert not report["safe"] and any(c["name"] == "No invisible text" and not c["ok"] for c in report["checks"])
+
+
+async def test_merge_delivers_clean_and_burns_tampered_or_unsafe_inputs(tmp_path):
+    a, b = text_pdf(["First file"]), text_pdf(["Second file", "Second file page two"])
+    ok = await convert([("a.pdf", a), ("b.pdf", b)], "offline", "none", "merge")
+    assert ok["verdict"] == "delivered", ok["steps"]
+    assert any(c["name"] == "Same content as your files" and c["ok"] for c in ok["scan"]["checks"])
+
+    bad = await convert([("a.pdf", a), ("b.pdf", b)], "offline", "hidden_text", "merge")
+    assert bad["verdict"] == "burned"
+
+    scripted = tmp_path / "s.pdf"
+    scripted.write_bytes(a)
+    tamper(scripted, "script")
+    early = await convert([("s.pdf", scripted.read_bytes()), ("b.pdf", b)], "offline", "none", "merge")
+    assert early["verdict"] == "burned" and "convert" not in [s["id"] for s in early["steps"]]
