@@ -234,59 +234,66 @@ def scan_pdf(path: Path, expect_pages: int | None, profile: str = "images") -> d
         r.check("Readable structure", not warnings,
                 "no parser errors or repairs" if not warnings else f"{len(warnings)} parser warning(s): the file is damaged or malformed")
 
-    for kind in sorted(raw_names):
-        found.setdefault(kind, 1)
-    if profile == "document":
-        # Ordinary documents often have links and fillable forms: report them, but they do not run anything.
-        notes = {k: found.pop(k) for k in list(found) if k in DOCUMENT_ALLOWED}
-        r.out["notes"] = [f"{k} ({n})" for k, n in sorted(notes.items())]
-    r.check("No active content", not found,
-            "no scripts, actions, links, forms or attachments" if not found and profile == "images"
-            else "no scripts, automatic actions or attachments" if not found
-            else "; ".join(f"{k} ({n})" for k, n in sorted(found.items())))
+    def analyse() -> dict[str, Any]:
+        for kind in sorted(raw_names):
+            found.setdefault(kind, 1)
+        if profile == "document":
+            # Ordinary documents often have links and fillable forms: report them, but they do not run anything.
+            notes = {k: found.pop(k) for k in list(found) if k in DOCUMENT_ALLOWED}
+            r.out["notes"] = [f"{k} ({n})" for k, n in sorted(notes.items())]
+        r.check("No active content", not found,
+                "no scripts, actions, links, forms or attachments" if not found and profile == "images"
+                else "no scripts, automatic actions or attachments" if not found
+                else "; ".join(f"{k} ({n})" for k, n in sorted(found.items())))
 
-    if expect_pages is not None:
-        label = "One page per image" if profile == "images" else "Page count"
-        r.check(label, len(pages) == expect_pages, f"{len(pages)} page(s), expected {expect_pages}")
+        if expect_pages is not None:
+            label = "One page per image" if profile == "images" else "Page count"
+            r.check(label, len(pages) == expect_pages, f"{len(pages)} page(s), expected {expect_pages}")
 
-    if profile == "document":
-        invisible = sum(_invisible_text_ops(p) for p in pages)
-        # Text a person cannot see, but a program reading the file can: the classic hiding place
-        # for instructions aimed at AI tools that read the document later.
-        r.check("No invisible text", invisible == 0,
-                "all text is drawn visibly" if not invisible else f"{invisible} invisible or microscopic text instruction(s)")
-        if invisible:
-            r.removed("invisible text", invisible)
-        page_text = [page_text_fingerprint(p) for p in pages]
+        if profile == "document":
+            invisible = sum(_invisible_text_ops(p) for p in pages)
+            # Text a person cannot see, but a program reading the file can: the classic hiding place
+            # for instructions aimed at AI tools that read the document later.
+            r.check("No invisible text", invisible == 0,
+                    "all text is drawn visibly" if not invisible else f"{invisible} invisible or microscopic text instruction(s)")
+            if invisible:
+                r.removed("invisible text", invisible)
+            page_text = [page_text_fingerprint(p) for p in pages]
+            structure()
+            return r.finish(pages=len(pages), page_text=page_text)
+
+        text_ops = sum(_page_text_ops(p) for p in pages)
+        fonts = sum(1 for p in pages if "/Font" in (p.get("/Resources") or {}))
+        extracted = sum(len((p.extract_text() or "").strip()) for p in pages)
+        # A PDF converted from pictures holds pictures only. Text here was not in the user's image:
+        # it is the classic hiding place for instructions aimed at AI tools that read the file later.
+        r.check("Pictures only, no text layer", text_ops == 0 and fonts == 0 and extracted == 0,
+                "pages contain images only" if text_ops == fonts == extracted == 0
+                else f"text layer found: {extracted} characters, {text_ops} text operator(s), {fonts} font(s)")
+        if extracted:
+            r.removed("text layer not present in the source image", extracted)
+
+        images = 0
+        others: set[str] = set()
+        for p in pages:
+            xobjects = (p.get("/Resources") or {}).get("/XObject") or {}
+            for ref in xobjects.values():
+                subtype = str(ref.get_object().get("/Subtype"))
+                images += subtype == "/Image"
+                if subtype != "/Image":
+                    others.add(subtype)
+        annots = sum(len(p.get("/Annots") or []) for p in pages)
+        r.check("Only images and no overlays", images >= len(pages) and not others and annots == 0,
+                f"{images} image(s)" + (f", other objects: {', '.join(sorted(others))}" if others else "")
+                + (f", {annots} annotation(s)" if annots else ""))
         structure()
-        return r.finish(pages=len(pages), page_text=page_text)
+        return r.finish(pages=len(pages))
 
-    text_ops = sum(_page_text_ops(p) for p in pages)
-    fonts = sum(1 for p in pages if "/Font" in (p.get("/Resources") or {}))
-    extracted = sum(len((p.extract_text() or "").strip()) for p in pages)
-    # A PDF converted from pictures holds pictures only. Text here was not in the user's image:
-    # it is the classic hiding place for instructions aimed at AI tools that read the file later.
-    r.check("Pictures only, no text layer", text_ops == 0 and fonts == 0 and extracted == 0,
-            "pages contain images only" if text_ops == fonts == extracted == 0
-            else f"text layer found: {extracted} characters, {text_ops} text operator(s), {fonts} font(s)")
-    if extracted:
-        r.removed("text layer not present in the source image", extracted)
-
-    images = 0
-    others: set[str] = set()
-    for p in pages:
-        xobjects = (p.get("/Resources") or {}).get("/XObject") or {}
-        for ref in xobjects.values():
-            subtype = str(ref.get_object().get("/Subtype"))
-            images += subtype == "/Image"
-            if subtype != "/Image":
-                others.add(subtype)
-    annots = sum(len(p.get("/Annots") or []) for p in pages)
-    r.check("Only images and no overlays", images >= len(pages) and not others and annots == 0,
-            f"{images} image(s)" + (f", other objects: {', '.join(sorted(others))}" if others else "")
-            + (f", {annots} annotation(s)" if annots else ""))
-    structure()
-    return r.finish(pages=len(pages))
+    try:
+        return analyse()
+    except Exception as e:  # a page that cannot even be read is damage, not something to skip
+        r.check("Readable structure", False, f"a page could not be read ({type(e).__name__}): the file is damaged or malformed")
+        return r.finish(pages=len(pages))
 
 
 def main(argv: list[str] | None = None) -> int:
