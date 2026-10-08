@@ -52,6 +52,7 @@ const FEATURES = [
   { icon: 'target', title: 'Attacks', text: 'Four injection scenarios, run side by side with and without VAJRA.', link: href.attacks },
   { icon: 'globe', title: 'Live fetch', text: 'Ask about a real web page and watch it pass through the sandbox.', link: '#/live' },
   { icon: 'package', title: 'Sandbox', text: 'Tool admission checks, OS isolation and the Windows Sandbox VM.', link: '#/sandbox' },
+  { icon: 'activity', title: 'Monitor', text: 'Live audit trail, alerts and continuous integrity scanning.', link: '#/monitor' },
   { icon: 'layers', title: 'How it works', text: 'The layers every tool result passes through, in order.', link: href.how },
   { icon: 'search', title: 'Attack anatomy', text: 'Each payload and the layer that stops it.', link: href.anatomy() },
   { icon: 'chart', title: 'Results', text: 'Measured runs with a live model and a worst-case model.', link: href.results },

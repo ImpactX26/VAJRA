@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import secrets
 import sys
 import tempfile
 import time
@@ -31,6 +32,7 @@ from vajra.taint.store import HANDLE_RE
 from vajra.taint.policy import PolicyEngine
 
 from . import winsandbox
+from .audit_trail import TRAIL
 from .llm import GroqLLM, GullibleScriptedLLM, ScriptedReader
 from .scenarios import SECRET_MARKERS, Scenario
 
@@ -117,8 +119,12 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
 
         async with AsyncExitStack() as stack:
             protected = mode == "protected"
+            run_id = secrets.token_hex(4)
+            if protected:
+                TRAIL.record("run.start", session=run_id, scenario=scenario.id, provider=provider)
             upstreams = await stack.enter_async_context(
-                UpstreamManager(configs, sandbox=protected, isolation="auto" if protected else "none")
+                UpstreamManager(configs, sandbox=protected, isolation="auto" if protected else "none",
+                                trail=TRAIL if protected else None)
             )
             ev("sandbox.isolation", servers={n: u.isolation for n, u in upstreams.upstreams.items()})
             ev("mcp.connected", servers={n: sorted(u.tools) for n, u in upstreams.upstreams.items()})
@@ -132,7 +138,8 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
                     ev("quarantine.output", text=out)
                     return out
 
-                middleware = TaintMiddleware(PolicyEngine(with_quarantine(config)), on_event=lambda e: ev(e.pop("type"), **e))
+                middleware = TaintMiddleware(PolicyEngine(with_quarantine(config)), on_event=lambda e: ev(e.pop("type"), **e),
+                                             trail=TRAIL, session=run_id)
                 server = build_server("vajra", upstreams, middleware, QuarantinedReader(reader_complete))
                 proxy = await stack.enter_async_context(Client(server))
                 tools = (await proxy.list_tools()).tools
@@ -160,11 +167,16 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
                 if handles:
                     text, _ = middleware.store.resolve(final)
                     ev("vajra.deliver", text=text, handles=len(handles))
+                    TRAIL.record("deliver", session=run_id, chars=len(text), handles=len(handles))
                 ev("vajra.report", **middleware.security_report())
 
         emails = [json.loads(l) for l in outbox.read_text(encoding="utf-8").splitlines() if l.strip()]
     ev("outbox", emails=emails)
-    ev("verdict", **_verdict(emails, scenario.user_email))
+    verdict = _verdict(emails, scenario.user_email)
+    ev("verdict", **verdict)
+    if mode == "protected":
+        TRAIL.record("run.end", session=run_id, scenario=scenario.id, status=verdict["status"],
+                     emails=len(emails), external_recipients=len(verdict["foreign_recipients"]))
 
 
 async def _agent_loop(planner: Any, system: str, task: str, tools: list[types.Tool], call: Any, ev: Any) -> str:

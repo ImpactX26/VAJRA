@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from './components/Icon.jsx'
 import { InjectionsPage } from './components/InjectionsPage.jsx'
 import { LiveFetchPage } from './components/LiveFetchPage.jsx'
+import { MonitorPage } from './components/MonitorPage.jsx'
 import { FileViewer, RunPanel, SourceEvidence } from './components/Panels.jsx'
 import { SandboxPage } from './components/SandboxPage.jsx'
 import { AttacksPage, HomePage, HowPage, ResultsPage } from './pages.jsx'
@@ -14,6 +15,7 @@ const NAV = [
   ['attacks', 'Attacks', href.attacks],
   ['live', 'Live fetch', '#/live'],
   ['sandbox', 'Sandbox', '#/sandbox'],
+  ['monitor', 'Monitor', '#/monitor'],
   ['how', 'How it works', href.how],
   ['anatomy', 'Anatomy', href.anatomy()],
   ['results', 'Results', href.results],
@@ -132,6 +134,7 @@ export default function App() {
   let body
   if (route.page === 'attacks') body = <AttacksPage scenarios={scenarios} />
   else if (route.page === 'sandbox') body = <SandboxPage />
+  else if (route.page === 'monitor') body = <MonitorPage />
   else if (route.page === 'live') {
     body = <LiveFetchPage scenarios={scenarios} unprotected={unprotected} protectedRun={protectedRun}
       provider={provider} providerLabel={providerLabel} controls={controls} />

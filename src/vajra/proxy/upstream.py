@@ -15,6 +15,7 @@ import mcp_types as types
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
+from ..audit import AuditLog
 from ..config import NAMESPACE_SEP, UpstreamConfig
 from ..isolation import Limits, describe, docker_command, docker_ready, jail_command
 from ..sandbox import Admission, inspect_tool
@@ -47,13 +48,19 @@ class UpstreamManager:
     """Owns one client session per configured upstream and routes calls to them."""
 
     def __init__(
-        self, configs: dict[str, UpstreamConfig], sandbox: bool = True, isolation: str = "auto", limits: Limits = Limits()
+        self,
+        configs: dict[str, UpstreamConfig],
+        sandbox: bool = True,
+        isolation: str = "auto",
+        limits: Limits = Limits(),
+        trail: AuditLog | None = None,
     ) -> None:
         """``isolation``: "auto" (Docker if ready, else Job Object), "docker", "job" or "none"."""
         self._configs = configs
         self._sandbox = sandbox
         self._isolation = isolation
         self._limits = limits
+        self._trail = trail
         self.admissions: list[Admission] = []
         """Sandbox verdict for every tool offered by every upstream, in connection order."""
         self._stack = AsyncExitStack()
@@ -78,6 +85,7 @@ class UpstreamManager:
             client = await self._stack.enter_async_context(Client(cfg.url))
             upstream = Upstream(cfg, client, isolation=cfg.isolation_note or "remote server")
             log.info("ISOLATE upstream=%s %s (%s)", cfg.name, upstream.isolation, cfg.url)
+            self._audit("isolate", server=cfg.name, isolation=upstream.isolation)
             await self._admit(cfg, client, upstream)
             return
 
@@ -97,6 +105,7 @@ class UpstreamManager:
         client = await self._stack.enter_async_context(Client(params))
         upstream = Upstream(cfg, client, isolation=describe(mode, self._limits, bool(cfg.container and cfg.container.network)))
         log.info("ISOLATE upstream=%s %s", cfg.name, upstream.isolation)
+        self._audit("isolate", server=cfg.name, isolation=upstream.isolation)
         await self._admit(cfg, client, upstream)
 
     async def _admit(self, cfg: UpstreamConfig, client: Client, upstream: Upstream) -> None:
@@ -107,6 +116,9 @@ class UpstreamManager:
             upstream.fingerprints[tool.name] = fp
             reason = inspect_tool(tool, fingerprint=fp, pin=cfg.tool(tool.name).pin, taken=taken) if self._sandbox else None
             self.admissions.append(Admission(cfg.name, tool.name, reason is None, reason, fp))
+            if self._sandbox:
+                self._audit("tool.admit" if reason is None else "tool.reject", server=cfg.name, tool=f"{cfg.name}/{tool.name}",
+                            fingerprint=fp, reason=reason)
             if reason is not None:
                 upstream.rejected[tool.name] = reason
                 log.warning("BURN tool=%s/%s %s", cfg.name, tool.name, reason)
@@ -120,6 +132,10 @@ class UpstreamManager:
 
         self.upstreams[cfg.name] = upstream
         log.info("connected upstream %s: %d tools, %d resources", cfg.name, len(upstream.tools), len(upstream.resources))
+
+    def _audit(self, kind: str, **fields: Any) -> None:
+        if self._trail is not None:
+            self._trail.record(kind, **fields)
 
     def _mode_for(self, cfg: UpstreamConfig) -> str:
         if self._isolation in ("auto", "docker") and cfg.container is not None and docker_ready():

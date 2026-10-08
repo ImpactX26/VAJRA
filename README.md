@@ -153,3 +153,14 @@ On Windows 11 with **Windows Sandbox** enabled, the web-fetching MCP server can 
 - **⏹ Stop VM** destroys it, wiping everything that ran inside.
 - Shared into the VM (read-only): `demo/`, the Python runtime, its standard library and packages. Writable: `.sandbox-handoff/` only. Folders containing a `.env` file are refused (`demo/backend/winsandbox.py`).
 - If the VM is off, protected runs fall back to the Windows Job Object sandbox automatically.
+
+## Audit trail and continuous monitoring
+
+**Audit trail** (`src/vajra/audit.py`): every decision VAJRA makes is appended to `.vajra-audit/audit.jsonl` as a hash-chained record (each record stores the SHA-256 of the previous one). Editing, reordering or deleting any past record is detected by `verify()`, which reports the exact record. Records hold metadata only (tools, argument labels, reasons, sizes, fingerprints); untrusted content and secrets are never written. Recorded events: run start/end, isolation, tool admitted/rejected, tool call, blocked action, output sealed, hidden content removed (fingerprints only), context taint, delivery.
+
+**Continuous monitoring** (`demo/backend/monitor.py`):
+- Alert rules on every record: rejected tools (critical if a reviewed tool changed), blocked actions, removed hidden content, context taint, and *repeated blocked actions* (3 within 10 minutes).
+- A background integrity scanner reconnects to every MCP server through the sandbox every 120 s, fingerprints every tool definition and raises a critical alert when a definition drifts from the baseline (alerting once per change).
+- **Monitor** page: live event stream (SSE), KPIs, alerts, integrity scanner controls (scan now, simulate a tool change, reset baseline), chain verification and JSONL export.
+
+API: `/api/audit`, `/api/audit/verify`, `/api/audit/stats`, `/api/audit/stream`, `/api/audit/export`, `/api/monitor/status`, `POST /api/monitor/scan`, `POST /api/monitor/config`.

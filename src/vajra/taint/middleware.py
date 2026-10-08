@@ -17,6 +17,7 @@ from typing import Any
 import mcp_types as types
 
 from ..config import Delivery
+from ..audit import AuditLog, fingerprint
 from ..sandbox import sanitize_html
 from .labels import TRUSTED, Integrity, Label
 from .policy import PolicyEngine, PolicyViolation
@@ -39,11 +40,16 @@ class TaintMiddleware:
         delivery: Delivery = Delivery.OPAQUE,
         store: TaintStore | None = None,
         on_event: EventSink | None = None,
+        trail: AuditLog | None = None,
+        session: str | None = None,
     ):
         self.policy = policy
         self.delivery = delivery
         self.store = store if store is not None else TaintStore()
         self.on_event = on_event
+        self.trail = trail
+        """Tamper-evident audit trail (metadata only; never untrusted content)."""
+        self.session = session or secrets.token_hex(4)
         self.context: Label = TRUSTED
         """Label of everything the planner has observed. Monotone: it only ever rises."""
         self.withheld: list[dict[str, Any]] = []
@@ -54,6 +60,7 @@ class TaintMiddleware:
         self, upstream: str, tool: str, arguments: dict[str, Any] | None, invoke: InvokeTool
     ) -> types.CallToolResult:
         qualified = f"{upstream}/{tool}"
+        arg_labels: dict[str, Label] = {}
         try:
             resolved, arg_labels = self.store.resolve_arguments(arguments)
             self._emit(
@@ -68,6 +75,7 @@ class TaintMiddleware:
             audit.warning("BLOCK tool=%s reason=%s", qualified, e)
             self._emit("block", tool=qualified, reason=str(e))
             self.blocked.append({"tool": qualified, "reason": str(e)})
+            self._audit("block", tool=qualified, reason=str(e), arg_labels=_labels(arg_labels))
             return _blocked(str(e))
 
         call_id = secrets.token_hex(4)
@@ -78,6 +86,7 @@ class TaintMiddleware:
             ", ".join(f"{k}: {l.integrity.name.lower()}" for k, l in arg_labels.items()),
         )
         self._emit("allow", tool=qualified, call_id=call_id, resolved_arguments=resolved)
+        self._audit("call", tool=qualified, call_id=call_id, arg_labels=_labels(arg_labels))
         result = await invoke(resolved)
         label = self.policy.tool_output_label(upstream, tool, call_id, arg_labels, self.context)
         rendered = _render_content(result.content)
@@ -90,6 +99,10 @@ class TaintMiddleware:
             audit.info("SANDBOX tool=%s call=%s burned=%d", qualified, call_id, len(burned))
             self._emit("sanitize", tool=qualified, call_id=call_id, burned=[{"kind": b.kind, "preview": b.preview} for b in burned],
                        kept_chars=len(rendered))
+            if burned:
+                # Fingerprints only: the removed text may be attacker-written and is never stored.
+                self._audit("sanitize", tool=qualified, call_id=call_id, kept_chars=len(rendered),
+                            removed=[{"kind": b.kind, "fingerprint": fingerprint(b.preview)} for b in burned])
         self._emit(
             "label",
             tool=qualified,
@@ -109,6 +122,8 @@ class TaintMiddleware:
         value = self.store.put(label, rendered, structured=result.structured_content)
         audit.info("WITHHOLD tool=%s call=%s handle=%s label=%s", qualified, call_id, value.handle, label.describe())
         self._emit("withhold", tool=qualified, call_id=call_id, handle=value.token, chars=len(value.text))
+        self._audit("withhold", tool=qualified, call_id=call_id, handle=value.handle, chars=len(value.text),
+                    sources=sorted(str(s) for s in label.sources))
         self.withheld.append({
             "tool": qualified,
             # Only planner-written (trusted) arguments are echoed: untrusted ones may hold attacker text.
@@ -161,7 +176,12 @@ class TaintMiddleware:
         if self.context.trusted:
             audit.warning("TAINT planner context now untrusted via %s", label.describe())
             self._emit("taint_context", label=label.describe())
+            self._audit("taint_context", sources=sorted(str(x) for x in label.sources))
         self.context = self.context | label
+
+    def _audit(self, kind: str, **fields: Any) -> None:
+        if self.trail is not None:
+            self.trail.record(kind, session=self.session, **fields)
 
     def _emit(self, kind: str, **fields: Any) -> None:
         if self.on_event is not None:
@@ -196,6 +216,10 @@ def security_notice(
     if context_tainted:
         lines.append("The planner was shown untrusted content directly, so further actions were restricted for this session.")
     return "\n".join(lines) if lines else "VAJRA: no untrusted content was involved in this request."
+
+
+def _labels(arg_labels: Any) -> dict[str, str] | None:
+    return {k: l.integrity.name.lower() for k, l in arg_labels.items()} if arg_labels else None
 
 
 def _short(value: Any, limit: int = 80) -> str:

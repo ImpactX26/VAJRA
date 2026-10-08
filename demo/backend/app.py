@@ -17,7 +17,7 @@ import httpx
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -201,6 +201,81 @@ async def run(request: Request) -> Any:
     return EventSourceResponse(stream())
 
 
+# ---------------------------------------------------------------- audit trail + monitoring
+from contextlib import asynccontextmanager  # noqa: E402
+
+from .audit_trail import TRAIL  # noqa: E402
+from .monitor import SCANNER  # noqa: E402
+
+
+async def audit_list(request: Request) -> JSONResponse:
+    q = request.query_params
+    kinds = set(filter(None, q.get("kinds", "").split(","))) or None
+    return JSONResponse({"records": TRAIL.tail(int(q.get("limit", 300)), kinds), "total": len(TRAIL)})
+
+
+async def audit_verify(request: Request) -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(TRAIL.verify))
+
+
+async def audit_stats(request: Request) -> JSONResponse:
+    return JSONResponse(TRAIL.stats())
+
+
+async def audit_export(request: Request) -> Response:
+    body = "".join(json.dumps(r, default=str) + "\n" for r in TRAIL.tail(10**9))
+    return Response(body, media_type="application/x-ndjson",
+                    headers={"Content-Disposition": "attachment; filename=vajra-audit.jsonl"})
+
+
+async def audit_stream(request: Request) -> Any:
+    """Server-Sent Events: every new audit record, as it is written."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    unsubscribe = TRAIL.subscribe(lambda rec: loop.call_soon_threadsafe(queue.put_nowait, rec))
+
+    async def events():
+        try:
+            while True:
+                try:
+                    rec = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield {"data": json.dumps(rec, default=str)}
+                except TimeoutError:
+                    yield {"event": "ping", "data": "{}"}
+        finally:
+            unsubscribe()
+
+    return EventSourceResponse(events())
+
+
+async def monitor_status(request: Request) -> JSONResponse:
+    return JSONResponse(SCANNER.status())
+
+
+async def monitor_scan(request: Request) -> JSONResponse:
+    return JSONResponse(await SCANNER.scan(reason="manual"))
+
+
+async def monitor_config(request: Request) -> JSONResponse:
+    body = await request.json()
+    if "enabled" in body:
+        SCANNER.enabled = bool(body["enabled"])
+    if "simulate_drift" in body:
+        SCANNER.simulate_drift = bool(body["simulate_drift"])
+    if body.get("reset_baseline"):
+        SCANNER.reset_baseline()
+    return JSONResponse(SCANNER.status())
+
+
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    task = asyncio.create_task(SCANNER.run_forever())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
 def create_app() -> Starlette:
     load_dotenv(ROOT / ".env")
     routes: list[Any] = [
@@ -210,6 +285,14 @@ def create_app() -> Starlette:
         Route("/api/sandbox", sandbox),
         Route("/api/site", site),
         Route("/api/isolation", isolation),
+        Route("/api/audit", audit_list),
+        Route("/api/audit/verify", audit_verify),
+        Route("/api/audit/stats", audit_stats),
+        Route("/api/audit/export", audit_export),
+        Route("/api/audit/stream", audit_stream),
+        Route("/api/monitor/status", monitor_status),
+        Route("/api/monitor/scan", monitor_scan, methods=["POST"]),
+        Route("/api/monitor/config", monitor_config, methods=["POST"]),
         Route("/api/winsandbox", winsandbox_state),
         Route("/api/winsandbox/start", winsandbox_start, methods=["POST"]),
         Route("/api/winsandbox/stop", winsandbox_stop, methods=["POST"]),
@@ -217,4 +300,4 @@ def create_app() -> Starlette:
     ]
     if FRONTEND_DIST.is_dir():
         routes.append(Mount("/", StaticFiles(directory=FRONTEND_DIST, html=True)))
-    return Starlette(routes=routes)
+    return Starlette(routes=routes, lifespan=lifespan)
