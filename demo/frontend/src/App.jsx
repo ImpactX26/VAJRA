@@ -3,6 +3,7 @@ import { Icon } from './components/Icon.jsx'
 import { InjectionsPage } from './components/InjectionsPage.jsx'
 import { LiveFetchPage } from './components/LiveFetchPage.jsx'
 import { MonitorPage } from './components/MonitorPage.jsx'
+import { ConvertPage } from './components/ConvertPage.jsx'
 import { FileViewer, RunPanel, SourceEvidence } from './components/Panels.jsx'
 import { SandboxPage } from './components/SandboxPage.jsx'
 import { ThreatsPage } from './components/ThreatsPage.jsx'
@@ -16,6 +17,7 @@ const NAV = [
   ['attacks', 'Attacks', href.attacks],
   ['threats', 'Threats', '#/threats'],
   ['live', 'Live fetch', '#/live'],
+  ['convert', 'Secure convert', '#/convert'],
   ['sandbox', 'Sandbox', '#/sandbox'],
   ['monitor', 'Monitor', '#/monitor'],
   ['how', 'How it works', href.how],
@@ -138,6 +140,7 @@ export default function App() {
   else if (route.page === 'sandbox') body = <SandboxPage />
   else if (route.page === 'monitor') body = <MonitorPage />
   else if (route.page === 'threats') body = <ThreatsPage />
+  else if (route.page === 'convert') body = <ConvertPage />
   else if (route.page === 'live') {
     body = <LiveFetchPage scenarios={scenarios} unprotected={unprotected} protectedRun={protectedRun}
       provider={provider} providerLabel={providerLabel} controls={controls} />

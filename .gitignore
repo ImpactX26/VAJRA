@@ -9,3 +9,4 @@ demo/frontend/dist/
 docs/*.pdf
 .sandbox-handoff/
 .vajra-audit/
+.vajra-files/

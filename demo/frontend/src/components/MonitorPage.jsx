@@ -22,6 +22,13 @@ const KIND = {
   'monitor.drift': { label: 'Drift', tone: 'bad', group: 'monitor' },
   'monitor.vm': { label: 'VM state', tone: 'muted', group: 'monitor' },
   'monitor.error': { label: 'Monitor error', tone: 'warn', group: 'monitor' },
+  'file.receive': { label: 'File received', tone: 'muted', group: 'runs' },
+  'file.check': { label: 'File checked', tone: 'info', group: 'calls' },
+  'file.convert': { label: 'File converted', tone: 'info', group: 'calls' },
+  'file.burn': { label: 'File burned', tone: 'bad', group: 'blocks' },
+  'file.deliver': { label: 'File delivered', tone: 'ok', group: 'runs' },
+  'file.download': { label: 'File downloaded', tone: 'ok', group: 'runs' },
+  'file.verdict': { label: 'File verdict', tone: 'muted', group: 'runs' },
   selftest: { label: 'Self-test', tone: 'info', group: 'monitor' },
   context_secret: { label: 'Secret read', tone: 'violet', group: 'withheld' },
 }
@@ -40,6 +47,11 @@ function details(r) {
   switch (r.kind) {
     case 'call': return r.arg_labels ? Object.entries(r.arg_labels).map(([k, v]) => `${k}: ${v}`).join(', ') || 'no arguments' : ''
     case 'block': return r.reason
+    case 'file.check': return `${r.file}: ${r.safe ? 'passed' : 'failed ' + (r.failed || []).join(', ')}`
+    case 'file.burn': return `burned at the ${r.stage} stage`
+    case 'file.deliver': return `${r.pages} page(s), ${r.bytes} bytes`
+    case 'file.convert': return `${r.converter}, ${r.bytes} bytes in ${r.seconds}s`
+    case 'file.verdict': return `${r.verdict}: ${r.reason}`
     case 'selftest': return `${r.passed} of ${r.total} threat checks passed`
     case 'withhold': return `${r.chars} chars sealed as ${r.handle?.slice(0, 10)}…`
     case 'sanitize': return `${(r.removed || []).length} hidden part(s) removed; ${r.kept_chars} chars kept`

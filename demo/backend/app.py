@@ -17,7 +17,7 @@ import httpx
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -248,6 +248,41 @@ async def audit_stream(request: Request) -> Any:
     return EventSourceResponse(events())
 
 
+async def convert_status(request: Request) -> JSONResponse:
+    from .convert import ENGINES, TAMPER_TESTS, ilovepdf_ready
+
+    return JSONResponse({"ilovepdf": ilovepdf_ready(), "engines": list(ENGINES), "tamper_tests": TAMPER_TESTS})
+
+
+async def convert_run(request: Request) -> JSONResponse:
+    """Image(s) to PDF through the PDF tool, with VAJRA checking everything before delivery."""
+    from .convert import ENGINES, MAX_IMAGES, MAX_UPLOAD, TAMPER_TESTS, convert
+
+    form = await request.form(max_files=MAX_IMAGES + 1)
+    engine, how = str(form.get("engine", "ilovepdf")), str(form.get("tamper", "none"))
+    if engine not in ENGINES or how not in TAMPER_TESTS:
+        return JSONResponse({"error": "bad engine or test"}, status_code=400)
+    uploads = []
+    for f in form.getlist("files"):
+        if hasattr(f, "read"):
+            data = await f.read(MAX_UPLOAD + 1)
+            if len(data) > MAX_UPLOAD:
+                return JSONResponse({"error": f"{f.filename} is larger than {MAX_UPLOAD // 2**20} MB"}, status_code=413)
+            uploads.append((f.filename or "image", data))
+    return JSONResponse(await convert(uploads, engine, how))
+
+
+async def convert_file(request: Request) -> Response:
+    from .convert import delivered_file
+
+    found = delivered_file(request.path_params["token"])
+    if found is None:
+        return JSONResponse({"error": "file not found or expired"}, status_code=404)
+    path, name = found
+    TRAIL.record("file.download", file=name)
+    return FileResponse(path, media_type="application/pdf", filename=name)
+
+
 async def selftest(request: Request) -> JSONResponse:
     """Run one deterministic check per threat against the live policy, and audit the outcome."""
     from .selftest import run_selftest
@@ -302,6 +337,9 @@ def create_app() -> Starlette:
         Route("/api/audit/export", audit_export),
         Route("/api/audit/stream", audit_stream),
         Route("/api/selftest", selftest),
+        Route("/api/convert/status", convert_status),
+        Route("/api/convert", convert_run, methods=["POST"]),
+        Route("/api/convert/file/{token}", convert_file),
         Route("/api/monitor/status", monitor_status),
         Route("/api/monitor/scan", monitor_scan, methods=["POST"]),
         Route("/api/monitor/config", monitor_config, methods=["POST"]),
