@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { FlowHero } from './components/FlowHero.jsx'
 import { href } from './router.js'
 
 export function useResults() {
@@ -27,8 +28,13 @@ export function HomePage({ scenarios }) {
         </p>
         <div className="cta">
           <a className="btn primary" href={href.attacks}>▶ Watch the demos</a>
+          <a className="btn" href="#/try">⚡ Try VAJRA</a>
           <a className="btn" href={href.how}>How it works</a>
         </div>
+      </section>
+
+      <section className="box hero-visual">
+        <FlowHero />
       </section>
 
       {bench && (
@@ -41,6 +47,7 @@ export function HomePage({ scenarios }) {
 
       <section className="explore">
         <a className="tile" href={href.attacks}><b>🎯 Attacks</b><span>{scenarios.length} live demos</span></a>
+        <a className="tile" href="#/try"><b>⚡ Try VAJRA</b><span>Your own input, step by step</span></a>
         <a className="tile" href={href.how}><b>⚙️ How it works</b><span>The layers of VAJRA</span></a>
         <a className="tile" href={href.anatomy()}><b>🔬 Attack anatomy</b><span>Each attack, layer by layer</span></a>
         <a className="tile" href={href.results}><b>📊 Results</b><span>Measured runs</span></a>
@@ -83,7 +90,7 @@ export function ResultsPage() {
       </p>
       {!results.length && <p className="muted">No recorded results found in docs/.</p>}
       {results.map((r) => (
-        <section key={r.id} className="card result-card">
+        <section key={r.id} className="box result-card">
           <h3>{r.meta.model}</h3>
           <p className="muted">{r.meta.date} · {r.meta.repeats} repeat(s) per scenario</p>
           <div className="result-head">
