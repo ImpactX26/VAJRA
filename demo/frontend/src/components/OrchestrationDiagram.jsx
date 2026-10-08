@@ -111,25 +111,25 @@ function persistentState(events, mode, scenario) {
   const sawInjection = events.some((e) => e.type === 'mcp.result' && containsInjection(e.text, scenario))
   if (sawInjection) {
     tones.planner = 'danger'
-    badges.planner = '⚠ hijacked by injection'
+    badges.planner = 'hijacked by injection'
   } else if (mode === 'protected' && events.some((e) => e.type === 'mcp.result' && hasHandle(e.text))) {
-    badges.planner = '🔒 sees handles only'
+    badges.planner = 'sees handles only'
   }
   const blocks = events.filter((e) => e.type === 'proxy.block').length
   if (blocks) {
     tones.policy = 'blocked'
-    badges.policy = `⛔ ${blocks} blocked`
+    badges.policy = `${blocks} blocked`
   }
   const withheld = events.filter((e) => e.type === 'proxy.withhold').length
-  if (withheld) badges.store = `🔒 ${withheld} withheld`
+  if (withheld) badges.store = `${withheld} withheld`
   if (events.some((e) => e.type === 'quarantine.output')) badges.reader = 'output stays tainted'
   const verdict = events.find((e) => e.type === 'verdict')
   if (verdict?.status === 'compromised') {
     tones.mail = 'danger'
-    badges.mail = '🚨 data exfiltrated'
+    badges.mail = 'data exfiltrated'
   } else if (verdict) {
     tones.mail = 'safe'
-    badges.mail = verdict.status === 'safe' ? `✓ only ${scenario.user_name.split(" ")[0]}` : 'nothing sent'
+    badges.mail = verdict.status === 'safe' ? `only ${scenario.user_name.split(" ")[0]}` : 'nothing sent'
   }
   return { tones, badges }
 }

@@ -1,4 +1,5 @@
 import { containsInjection } from '../highlight.jsx'
+import { Icon } from './Icon.jsx'
 
 // A short, plain-English recap of one run, built from its event stream.
 // Each line is one thing that happened; repeats are merged ("×3").
@@ -13,13 +14,13 @@ function args(raw) {
 }
 
 function lookedAt(tool, a) {
-  if (tool.endsWith('read_file')) return { icon: '📄', text: `Opened “${a.path}”.` }
-  if (tool.endsWith('list_files')) return { icon: '🗂️', text: 'Listed the files.' }
-  if (tool.endsWith('fetch_url')) return { icon: '🌐', text: `Opened a web page (${a.url}).` }
+  if (tool.endsWith('read_file')) return { icon: 'file', text: `Opened “${a.path}”.` }
+  if (tool.endsWith('list_files')) return { icon: 'folder', text: 'Listed the files.' }
+  if (tool.endsWith('fetch_url')) return { icon: 'globe', text: `Opened a web page (${a.url}).` }
   if (tool === 'vajra__quarantine') {
-    return { icon: '🧪', tone: 'safe', text: 'Sent the sealed content to VAJRA’s reader, an AI with no abilities, to summarise.' }
+    return { icon: 'flask', tone: 'safe', text: 'Sent the sealed content to VAJRA’s reader, an AI with no abilities, to summarise.' }
   }
-  return { icon: '🔧', text: `Used the tool ${tool}.` }
+  return { icon: 'tool', text: `Used the tool ${tool}.` }
 }
 
 export function buildSummary(events, mode, scenario) {
@@ -32,17 +33,17 @@ export function buildSummary(events, mode, scenario) {
   const attackers = new Set(scenario.attacker_addresses.map((x) => x.toLowerCase()))
   const mailLine = (to) =>
     attackers.has(to.toLowerCase())
-      ? { icon: '📧', tone: 'danger', text: `Emailed ${to}, an address that came from the file, not from the user.` }
+      ? { icon: 'mail', tone: 'danger', text: `Emailed ${to}, an address that came from the file, not from the user.` }
       : to.toLowerCase() === scenario.user_email
-      ? { icon: '📧', tone: 'ok', text: `Emailed the result to ${scenario.user_name} (${to}).` }
-      : { icon: '📧', text: `Emailed ${to}.` }
+      ? { icon: 'mail', tone: 'ok', text: `Emailed the result to ${scenario.user_name} (${to}).` }
+      : { icon: 'mail', text: `Emailed ${to}.` }
 
   let pendingMail = null
   let sawInjection = false
   for (const ev of events) {
     switch (ev.type) {
       case 'run.start':
-        add({ icon: '👤', text: `${scenario.user_name} asked the assistant for help.` })
+        add({ icon: 'user', text: `${scenario.user_name} asked the assistant for help.` })
         break
       case 'mcp.call': {
         const a = args(ev.arguments)
@@ -57,25 +58,25 @@ export function buildSummary(events, mode, scenario) {
       case 'mcp.result':
         if (mode === 'unprotected' && !sawInjection && containsInjection(ev.text, scenario)) {
           sawInjection = true
-          add({ icon: '⚠️', tone: 'danger', text: 'The hidden text in that content went straight into the AI’s view.' })
+          add({ icon: 'alert', tone: 'danger', text: 'The hidden text in that content went straight into the AI’s view.' })
         }
         break
       case 'sandbox.isolation': {
         const kinds = [...new Set(Object.values(ev.servers))].filter((k) => k !== 'no isolation')
-        if (kinds.length) add({ icon: '🔒', tone: 'safe', text: `The tool servers ran inside an OS sandbox: ${kinds.join('; ')}.` })
+        if (kinds.length) add({ icon: 'lock', tone: 'safe', text: `The tool servers ran inside an OS sandbox: ${kinds.join('; ')}.` })
         break
       }
       case 'proxy.sanitize':
         if (ev.burned.length) {
-          add({ icon: '🔥', tone: 'safe', text: `VAJRA's sandbox burned ${ev.burned.length} hidden part${ev.burned.length > 1 ? 's' : ''} of the content: things a person could not see.` })
+          add({ icon: 'flame', tone: 'safe', text: `VAJRA's sandbox burned ${ev.burned.length} hidden part${ev.burned.length > 1 ? 's' : ''} of the content: things a person could not see.` })
         }
         break
       case 'vajra.deliver':
-        add({ icon: '📬', tone: 'ok', text: 'VAJRA delivered the cleaned answer to the user.' })
+        add({ icon: 'inbox', tone: 'ok', text: 'VAJRA delivered the cleaned answer to the user.' })
         break
       case 'proxy.withhold':
         if (!ev.tool.startsWith('vajra/') && !ev.tool.startsWith('mail/')) {
-          add({ icon: '🔒', tone: 'safe', text: 'VAJRA sealed that content. The AI only got a reference to it, never the text.' })
+          add({ icon: 'lock', tone: 'safe', text: 'VAJRA sealed that content. The AI only got a reference to it, never the text.' })
         }
         break
       case 'proxy.allow':
@@ -85,16 +86,16 @@ export function buildSummary(events, mode, scenario) {
         }
         break
       case 'proxy.block':
-        add({ icon: '⛔', tone: 'blocked', text: 'VAJRA blocked an email whose recipient came from outside content. Nothing was sent.' })
+        add({ icon: 'ban', tone: 'blocked', text: 'VAJRA blocked an email whose recipient came from outside content. Nothing was sent.' })
         pendingMail = null
         break
       case 'agent.final': {
         const t = (ev.text || '').replace(/\s+/g, ' ').trim()
-        add({ icon: '💬', text: `The assistant replied: “${t.length > 160 ? `${t.slice(0, 160)}…` : t}”` })
+        add({ icon: 'message', text: `The assistant replied: “${t.length > 160 ? `${t.slice(0, 160)}…` : t}”` })
         break
       }
       case 'error':
-        add({ icon: '💥', tone: 'danger', text: `The run failed: ${ev.message}` })
+        add({ icon: 'alert', tone: 'danger', text: `The run failed: ${ev.message}` })
         break
       default:
     }
@@ -109,7 +110,7 @@ export function Summary({ events, mode, scenario }) {
     <ol className="summary">
       {lines.map((l, i) => (
         <li key={i} className={l.tone ? `tone-${l.tone}` : ''}>
-          <span className="s-icon">{l.icon}</span>
+          <span className="s-icon"><Icon name={l.icon} size={15} /></span>
           <span>
             {l.text}
             {l.count > 1 && <span className="s-count"> ×{l.count}</span>}
