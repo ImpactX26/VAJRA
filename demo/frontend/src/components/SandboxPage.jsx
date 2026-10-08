@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { WinSandboxPanel } from './WinSandboxPanel.jsx'
 
 // Animated tool import: every tool enters VAJRA's sandbox, its four checks run,
 // and it is either burned or delivered to the assistant.
@@ -139,6 +140,8 @@ export function SandboxPage() {
           </ul>
         </div>
       </section>
+
+      <WinSandboxPanel />
 
       <section className="box proof">
         <div className="proof-head">

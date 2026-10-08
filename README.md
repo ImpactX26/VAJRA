@@ -143,3 +143,13 @@ docker build -t vajra-mcp-servers -f docker/Dockerfile.mcp docker/
 ```
 
 VAJRA detects Docker and the image automatically and switches from Job Objects to containers (`isolation="auto"`).
+
+### Windows Sandbox (virtual machine) isolation
+
+On Windows 11 with **Windows Sandbox** enabled, the web-fetching MCP server can run inside a disposable VM:
+
+- Sandbox page → **▶ Start the VM** (or `POST /api/winsandbox/start`). VAJRA uses the `wsb` CLI to boot the VM headless (~30 s–2 min), runs the server inside it as SYSTEM, and connects to it over the VM network.
+- While the VM is up, every protected web fetch happens **inside the VM**; the result comes back through VAJRA's checks (burn hidden content → seal → reader → policy) and only the clean answer is delivered.
+- **⏹ Stop VM** destroys it, wiping everything that ran inside.
+- Shared into the VM (read-only): `demo/`, the Python runtime, its standard library and packages. Writable: `.sandbox-handoff/` only. Folders containing a `.env` file are refused (`demo/backend/winsandbox.py`).
+- If the VM is off, protected runs fall back to the Windows Job Object sandbox automatically.

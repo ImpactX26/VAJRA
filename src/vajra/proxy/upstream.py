@@ -74,6 +74,13 @@ class UpstreamManager:
         await self._stack.__aexit__(*exc)
 
     async def _connect(self, cfg: UpstreamConfig) -> None:
+        if cfg.url is not None:
+            client = await self._stack.enter_async_context(Client(cfg.url))
+            upstream = Upstream(cfg, client, isolation=cfg.isolation_note or "remote server")
+            log.info("ISOLATE upstream=%s %s (%s)", cfg.name, upstream.isolation, cfg.url)
+            await self._admit(cfg, client, upstream)
+            return
+
         cwd = cfg.cwd
         if self._sandbox and cwd is None:
             # Isolated scratch directory per server; removed when the manager closes.
@@ -90,6 +97,9 @@ class UpstreamManager:
         client = await self._stack.enter_async_context(Client(params))
         upstream = Upstream(cfg, client, isolation=describe(mode, self._limits, bool(cfg.container and cfg.container.network)))
         log.info("ISOLATE upstream=%s %s", cfg.name, upstream.isolation)
+        await self._admit(cfg, client, upstream)
+
+    async def _admit(self, cfg: UpstreamConfig, client: Client, upstream: Upstream) -> None:
         taken = {t for u in self.upstreams.values() for t in u.tools}
 
         for tool in await _list_all_tools(client):

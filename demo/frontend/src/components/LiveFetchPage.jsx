@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { RunPanel } from './Panels.jsx'
+import { WinSandboxChip, useWinSandbox } from './WinSandboxPanel.jsx'
 
 // Real-world demo: the user types a request about a page on the separate demo
 // website. The page is fetched over real HTTP through the web MCP server; with
@@ -10,6 +11,7 @@ const DEFAULT_PROMPT = 'Summarize the setup steps from http://127.0.0.1:8090/set
 export function LiveFetchPage({ scenarios, unprotected, protectedRun, provider, providerLabel, controls }) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [site, setSite] = useState(null)
+  const [vm] = useWinSandbox()
   useEffect(() => {
     fetch('/api/site').then((r) => r.json()).then(setSite).catch(() => setSite({ up: false }))
   }, [])
@@ -46,6 +48,7 @@ export function LiveFetchPage({ scenarios, unprotected, protectedRun, provider, 
           {site == null ? 'checking…' : site.up ? 'is online' : 'is offline. Start it with python -m demo.backend.site_server'}
         </span>
         {site?.up && <a className="btn" href={site.url} target="_blank" rel="noreferrer">Open the page ↗</a>}
+        <WinSandboxChip vm={vm} />
       </section>
 
       <section className="box live-ask">

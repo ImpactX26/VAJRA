@@ -22,6 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .llm import DEFAULT_GROQ_MODEL as GROQ_MODEL
+from . import winsandbox
 from .runner import MOCK_SERVERS, run_scenario, upstream_configs
 from .scenarios import SCENARIOS
 
@@ -77,6 +78,19 @@ async def sandbox(request: Request) -> JSONResponse:
             ]
             isolation = {n: u.isolation for n, u in upstreams.upstreams.items()}
     return JSONResponse({"servers": list(configs), "tools": report, "isolation": isolation})
+
+
+async def winsandbox_state(request: Request) -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(winsandbox.state))
+
+
+async def winsandbox_start(request: Request) -> JSONResponse:
+    """Boot a Windows Sandbox VM and start the web MCP server inside it (takes 1-3 minutes)."""
+    return JSONResponse(await asyncio.to_thread(winsandbox.launch))
+
+
+async def winsandbox_stop(request: Request) -> JSONResponse:
+    return JSONResponse(await asyncio.to_thread(winsandbox.stop))
 
 
 async def isolation(request: Request) -> JSONResponse:
@@ -196,6 +210,9 @@ def create_app() -> Starlette:
         Route("/api/sandbox", sandbox),
         Route("/api/site", site),
         Route("/api/isolation", isolation),
+        Route("/api/winsandbox", winsandbox_state),
+        Route("/api/winsandbox/start", winsandbox_start, methods=["POST"]),
+        Route("/api/winsandbox/stop", winsandbox_stop, methods=["POST"]),
         Route("/api/run", run),
     ]
     if FRONTEND_DIST.is_dir():

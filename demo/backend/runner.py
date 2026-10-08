@@ -7,6 +7,8 @@ protected:    planner LLM ──MCP──► VAJRA proxy ──MCP──► file
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import json
 import sys
 import tempfile
@@ -28,6 +30,7 @@ from vajra.taint.middleware import TaintMiddleware
 from vajra.taint.store import HANDLE_RE
 from vajra.taint.policy import PolicyEngine
 
+from . import winsandbox
 from .llm import GroqLLM, GullibleScriptedLLM, ScriptedReader
 from .scenarios import SECRET_MARKERS, Scenario
 
@@ -104,6 +107,11 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
         outbox = Path(tmp) / "outbox.jsonl"
         outbox.touch()
         configs = upstream_configs(outbox)
+        if mode == "protected":
+            # If a Windows Sandbox VM is up, web pages are fetched inside it instead of on this machine.
+            vm = await asyncio.to_thread(winsandbox.state)
+            if vm["ready"]:
+                configs["web"] = dataclasses.replace(configs["web"], url=vm["url"], isolation_note=vm["note"])
         ev("run.start", mode=mode, provider=getattr(planner, "model", planner.label), scenario=scenario.id,
            servers=list(configs), task=scenario.task)
 

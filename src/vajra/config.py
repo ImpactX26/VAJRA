@@ -59,6 +59,11 @@ class UpstreamConfig:
     tools: dict[str, ToolConfig] = field(default_factory=dict)
     container: ContainerSpec | None = None
     """How to run this server in Docker (container paths). Used when Docker isolation is available."""
+    url: str | None = None
+    """Connect to an already-running MCP server over streamable HTTP instead of launching ``command``
+    (e.g. a server inside a Windows Sandbox VM)."""
+    isolation_note: str | None = None
+    """How a ``url`` server is isolated, for reports and the UI."""
 
     def tool(self, name: str) -> ToolConfig:
         return self.tools.get(name, ToolConfig())

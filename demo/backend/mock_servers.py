@@ -151,4 +151,12 @@ ROLES = {"files": files_server, "web": web_server, "mail": mail_server, "toolbox
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--role", choices=ROLES, required=True)
-    ROLES[parser.parse_args().role]().run()
+    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    a = parser.parse_args()
+    server = ROLES[a.role]()
+    if a.transport == "http":  # used inside Windows Sandbox, where VAJRA connects over the VM network
+        server.run("streamable-http", host=a.host, port=a.port)
+    else:
+        server.run()

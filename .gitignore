@@ -7,3 +7,4 @@ vajra.toml
 node_modules/
 demo/frontend/dist/
 docs/*.pdf
+.sandbox-handoff/
