@@ -59,3 +59,14 @@ async def test_proxy_decisions_are_audited_without_attacker_text():
     dump = json.dumps(trail.tail())
     assert INJECTION_MARKER not in dump  # metadata only, never the untrusted content
     assert trail.verify()["ok"]
+
+
+def test_two_writers_on_one_file_keep_a_single_valid_chain(tmp_path):
+    # Two AuditLog objects stand in for two processes (e.g. the web server and a script).
+    path = tmp_path / "audit.jsonl"
+    server, script = AuditLog(path), AuditLog(path)
+    for i in range(6):
+        (server if i % 2 else script).record("call", n=i)
+    assert server.verify()["ok"] and script.verify()["ok"]
+    assert AuditLog(path).verify() == {**AuditLog(path).verify(), "ok": True, "records": 6}
+    assert [r["n"] for r in AuditLog(path).tail()] == list(range(6))

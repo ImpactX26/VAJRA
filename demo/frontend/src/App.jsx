@@ -14,8 +14,8 @@ const SPEEDS = { Slow: 1400, Normal: 750, Fast: 250 }
 const NAV = [
   ['home', 'Overview', href.home],
   ['attacks', 'Attacks', href.attacks],
-  ['threats', 'Threats', '#/threats'],
-  ['convert', 'Secure convert', '#/convert'],
+  ['threats', 'Threats', '#/threats', true],
+  ['convert', 'Secure convert', '#/convert', true],
   ['sandbox', 'Sandbox', '#/sandbox'],
   ['monitor', 'Monitor', '#/monitor'],
   ['how', 'How it works', href.how],
@@ -210,9 +210,10 @@ export default function App() {
         <div className="topbar-inner">
           <a className="brand" href={href.home}><Logo /> VAJRA</a>
           <nav className="nav" aria-label="Main">
-            {NAV.map(([id, label, link]) => (
+            {NAV.map(([id, label, link, isNew]) => (
               <a key={id} href={link} className={active === id ? 'active' : ''} aria-current={active === id ? 'page' : undefined}>
                 {label}
+                {isNew && <span className="nav-new" title="New" />}
               </a>
             ))}
           </nav>

@@ -292,8 +292,9 @@ async def selftest(request: Request) -> JSONResponse:
     report = await run_selftest()
     passed = sum(c["ok"] for t in report["threats"] for c in t["checks"])
     total = sum(len(t["checks"]) for t in report["threats"])
-    TRAIL.record("selftest", ok=report["ok"], passed=passed, total=total)
-    return JSONResponse(report)
+    if request.query_params.get("quiet") != "1":  # the home page's status panel reads it without logging
+        TRAIL.record("selftest", ok=report["ok"], passed=passed, total=total)
+    return JSONResponse({**report, "passed": passed, "total": total})
 
 
 async def monitor_status(request: Request) -> JSONResponse:

@@ -5,6 +5,7 @@ import './styles.css'
 import './new-site.css'
 import './sandbox-anatomy.css'
 import './pro.css'
+import './showcase.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

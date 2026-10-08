@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FlowHero } from './components/FlowHero.jsx'
+import { HomeShowcase } from './components/HomeShowcase.jsx'
 import { Icon } from './components/Icon.jsx'
 import { LAYERS } from './injectionGuide.js'
 import { href } from './router.js'
@@ -48,71 +48,12 @@ export function PageHeader({ eyebrow, title, lead, children }) {
   )
 }
 
-const FEATURES = [
-  { icon: 'target', title: 'Attacks', text: 'Four injection scenarios, run side by side with and without VAJRA.', link: href.attacks },
-  { icon: 'shield-check', title: 'Threats', text: 'Five threats, the rule that stops each, and a live self-test.', link: '#/threats' },
-  { icon: 'file', title: 'Secure convert', text: 'Image to PDF with the real iLovePDF; unsafe files are burned before download.', link: '#/convert' },
-  { icon: 'package', title: 'Sandbox', text: 'Tool admission checks, OS isolation and the Windows Sandbox VM.', link: '#/sandbox' },
-  { icon: 'activity', title: 'Monitor', text: 'Live audit trail, alerts and continuous integrity scanning.', link: '#/monitor' },
-  { icon: 'layers', title: 'How it works', text: 'The layers every tool result passes through, in order.', link: href.how },
-  { icon: 'search', title: 'Attack anatomy', text: 'Each payload and the layer that stops it.', link: href.anatomy() },
-  { icon: 'chart', title: 'Results', text: 'Measured runs with a live model and a worst-case model.', link: href.results },
-]
-
 export function HomePage() {
   const results = useResults()
   const bench = results.find((r) => r.id === 'evaluation_groq_agentdojo')
   const without = bench && rate(bench.runs, 'unprotected', 'attack_succeeded')
   const withV = bench && rate(bench.runs, 'protected', 'attack_succeeded')
-  return (
-    <div className="page">
-      <section className="home-hero">
-        <span className="eyebrow">Zero-trust MCP proxy</span>
-        <h1>Security for AI agents that holds even when the model is fooled</h1>
-        <p className="lead">
-          VAJRA sits between an AI assistant and its tools. It stops prompt injection architecturally, with taint
-          tracking, a tool-less quarantine model, OS sandboxing and deterministic policy. No AI classifiers involved.
-        </p>
-        <div className="cta">
-          <a className="btn primary lg" href={href.attacks}><Icon name="play" size={15} /> Watch the demos</a>
-          <a className="btn lg" href="#/convert"><Icon name="file" size={15} /> Secure convert</a>
-          <a className="btn lg" href={href.how}><Icon name="layers" size={15} /> How it works</a>
-        </div>
-      </section>
-
-      <section className="box hero-visual">
-        <FlowHero />
-      </section>
-
-      {bench && (
-        <a className="metrics" href={href.results}>
-          <div className="metric">
-            <span className="metric-value bad"><CountUp value={without.hit} />/{without.total}</span>
-            <span className="metric-label">runs hijacked without VAJRA</span>
-          </div>
-          <div className="metric">
-            <span className="metric-value good"><CountUp value={withV.hit} />/{withV.total}</span>
-            <span className="metric-label">runs hijacked with VAJRA</span>
-          </div>
-          <div className="metric-note">
-            AgentDojo benchmark payload (ETH Zurich) against a live model, {bench.meta.model}.
-            <span className="link-inline">View all results <Icon name="arrow-right" size={14} /></span>
-          </div>
-        </a>
-      )}
-
-      <section className="feature-grid">
-        {FEATURES.map((f) => (
-          <a key={f.title} className="feature" href={f.link}>
-            <span className="feature-icon"><Icon name={f.icon} size={18} /></span>
-            <span className="feature-title">{f.title}</span>
-            <span className="feature-text">{f.text}</span>
-            <span className="feature-go"><Icon name="arrow-right" size={14} /></span>
-          </a>
-        ))}
-      </section>
-    </div>
-  )
+  return <HomeShowcase bench={bench} without={without} withV={withV} CountUp={CountUp} />
 }
 
 export function AttacksPage({ scenarios }) {
