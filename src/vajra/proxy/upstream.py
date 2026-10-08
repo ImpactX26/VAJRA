@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import shutil
+import tempfile
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any, Self
@@ -14,6 +16,7 @@ from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
 from ..config import NAMESPACE_SEP, UpstreamConfig
+from ..sandbox import Admission, inspect_tool
 
 log = logging.getLogger("vajra.upstream")
 
@@ -26,7 +29,7 @@ class Upstream:
     resources: dict[str, types.Resource] = field(default_factory=dict)
     fingerprints: dict[str, str] = field(default_factory=dict)
     rejected: dict[str, str] = field(default_factory=dict)
-    """Tools dropped at connect time, with the reason (e.g. pin mismatch)."""
+    """Tools burned in the sandbox at connect time, with the reason."""
 
     @property
     def name(self) -> str:
@@ -40,8 +43,11 @@ class UnknownRouteError(LookupError):
 class UpstreamManager:
     """Owns one client session per configured upstream and routes calls to them."""
 
-    def __init__(self, configs: dict[str, UpstreamConfig]) -> None:
+    def __init__(self, configs: dict[str, UpstreamConfig], sandbox: bool = True) -> None:
         self._configs = configs
+        self._sandbox = sandbox
+        self.admissions: list[Admission] = []
+        """Sandbox verdict for every tool offered by every upstream, in connection order."""
         self._stack = AsyncExitStack()
         self.upstreams: dict[str, Upstream] = {}
         self._resource_routes: dict[str, str] = {}
@@ -60,18 +66,24 @@ class UpstreamManager:
         await self._stack.__aexit__(*exc)
 
     async def _connect(self, cfg: UpstreamConfig) -> None:
-        params = StdioServerParameters(command=cfg.command, args=list(cfg.args), env=cfg.env, cwd=cfg.cwd)
+        cwd = cfg.cwd
+        if self._sandbox and cwd is None:
+            # Isolated scratch directory per server; removed when the manager closes.
+            cwd = tempfile.mkdtemp(prefix=f"vajra-sandbox-{cfg.name}-")
+            self._stack.callback(shutil.rmtree, cwd, True)
+        params = StdioServerParameters(command=cfg.command, args=list(cfg.args), env=cfg.env, cwd=cwd)
         client = await self._stack.enter_async_context(Client(params))
         upstream = Upstream(cfg, client)
+        taken = {t for u in self.upstreams.values() for t in u.tools}
 
         for tool in await _list_all_tools(client):
             fp = tool_fingerprint(tool)
             upstream.fingerprints[tool.name] = fp
-            pin = cfg.tool(tool.name).pin
-            if pin is not None and pin != fp:
-                reason = f"definition changed (pinned {pin}, got {fp})"
+            reason = inspect_tool(tool, fingerprint=fp, pin=cfg.tool(tool.name).pin, taken=taken) if self._sandbox else None
+            self.admissions.append(Admission(cfg.name, tool.name, reason is None, reason, fp))
+            if reason is not None:
                 upstream.rejected[tool.name] = reason
-                log.warning("REJECT tool=%s/%s %s", cfg.name, tool.name, reason)
+                log.warning("BURN tool=%s/%s %s", cfg.name, tool.name, reason)
                 continue
             upstream.tools[tool.name] = tool
         if client.server_capabilities.resources is not None:

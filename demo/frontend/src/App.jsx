@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { InjectionsPage } from './components/InjectionsPage.jsx'
 import { FileViewer, RunPanel, SourceEvidence } from './components/Panels.jsx'
-import { Playground } from './components/Playground.jsx'
+import { SandboxPage } from './components/SandboxPage.jsx'
 import { LAYERS } from './injectionGuide.js'
 import { AttacksPage, HomePage, ResultsPage } from './pages.jsx'
 import { href, useRoute } from './router.js'
@@ -11,7 +11,7 @@ const SPEEDS = { Slow: 1400, Normal: 750, Fast: 250 }
 const NAV = [
   ['home', 'Home', href.home],
   ['attacks', 'Attacks', href.attacks],
-  ['try', 'Try VAJRA', '#/try'],
+  ['sandbox', 'Sandbox', '#/sandbox'],
   ['how', 'How it works', href.how],
   ['anatomy', 'Attack anatomy', href.anatomy()],
   ['results', 'Results', href.results],
@@ -38,16 +38,6 @@ function HowPage() {
       <ul className="how-planned">
         {LAYERS.filter((l) => l.planned).map((l) => <li key={l.id}><b>{l.name}.</b> {l.what}</li>)}
       </ul>
-    </div>
-  )
-}
-
-function TryPage() {
-  return (
-    <div className="page">
-      <h1 className="page-title">Try VAJRA</h1>
-      <p className="lead">Run any text through VAJRA’s three checks and watch each decision.</p>
-      <Playground />
     </div>
   )
 }
@@ -112,7 +102,7 @@ export default function App() {
   const active = route.page === 'demo' ? 'attacks' : route.page
   let body
   if (route.page === 'attacks') body = <AttacksPage scenarios={scenarios} />
-  else if (route.page === 'try') body = <TryPage />
+  else if (route.page === 'sandbox') body = <SandboxPage />
   else if (route.page === 'how') body = <HowPage />
   else if (route.page === 'anatomy') body = <InjectionsPage scenarios={scenarios} currentId={route.id} />
   else if (route.page === 'results') body = <ResultsPage />

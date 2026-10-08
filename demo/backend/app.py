@@ -17,7 +17,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .llm import DEFAULT_GROQ_MODEL as GROQ_MODEL
-from .runner import run_scenario
+from .runner import MOCK_SERVERS, run_scenario, upstream_configs
 from .scenarios import SCENARIOS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,6 +45,32 @@ def groq_settings() -> dict[str, str] | None:
 async def status(request: Request) -> JSONResponse:
     groq = groq_settings()
     return JSONResponse({"groq_available": groq is not None, "groq_model": GROQ_MODEL})
+
+
+# The operator reviewed toolbox/lookup_record earlier and pinned that version; the server has changed it since.
+REVIEWED_PIN = "sha256:6f1d0c2a9b7e4f3a8c5d2e1b0a9f8e7d"
+
+
+async def sandbox(request: Request) -> JSONResponse:
+    """Import every demo server's tools through VAJRA's sandbox and report each verdict."""
+    import sys
+    import tempfile
+
+    from vajra.config import ToolConfig, UpstreamConfig
+    from vajra.proxy import UpstreamManager
+
+    with tempfile.TemporaryDirectory(prefix="vajra-sbx-api-") as tmp:
+        configs = upstream_configs(Path(tmp) / "outbox.jsonl")
+        configs["toolbox"] = UpstreamConfig(
+            "toolbox", sys.executable, args=(MOCK_SERVERS, "--role", "toolbox"),
+            tools={"lookup_record": ToolConfig(pin=REVIEWED_PIN)},
+        )
+        async with UpstreamManager(configs, sandbox=True) as upstreams:
+            report = [
+                {"server": a.server, "tool": a.tool, "admitted": a.admitted, "reason": a.reason, "fingerprint": a.fingerprint}
+                for a in upstreams.admissions
+            ]
+    return JSONResponse({"servers": list(configs), "tools": report})
 
 
 async def results(request: Request) -> JSONResponse:
@@ -102,6 +128,7 @@ def create_app() -> Starlette:
         Route("/api/status", status),
         Route("/api/scenarios", scenarios),
         Route("/api/results", results),
+        Route("/api/sandbox", sandbox),
         Route("/api/run", run),
     ]
     if FRONTEND_DIST.is_dir():

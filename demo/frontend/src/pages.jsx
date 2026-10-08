@@ -28,7 +28,7 @@ export function HomePage({ scenarios }) {
         </p>
         <div className="cta">
           <a className="btn primary" href={href.attacks}>▶ Watch the demos</a>
-          <a className="btn" href="#/try">⚡ Try VAJRA</a>
+          <a className="btn" href="#/sandbox">🛡️ Sandbox</a>
           <a className="btn" href={href.how}>How it works</a>
         </div>
       </section>
@@ -47,7 +47,7 @@ export function HomePage({ scenarios }) {
 
       <section className="explore">
         <a className="tile" href={href.attacks}><b>🎯 Attacks</b><span>{scenarios.length} live demos</span></a>
-        <a className="tile" href="#/try"><b>⚡ Try VAJRA</b><span>Your own input, step by step</span></a>
+        <a className="tile" href="#/sandbox"><b>🛡️ Sandbox</b><span>Unsafe tools burned on import</span></a>
         <a className="tile" href={href.how}><b>⚙️ How it works</b><span>The layers of VAJRA</span></a>
         <a className="tile" href={href.anatomy()}><b>🔬 Attack anatomy</b><span>Each attack, layer by layer</span></a>
         <a className="tile" href={href.results}><b>📊 Results</b><span>Measured runs</span></a>

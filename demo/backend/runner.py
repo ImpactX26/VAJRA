@@ -87,7 +87,7 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
            servers=list(configs), task=scenario.task)
 
         async with AsyncExitStack() as stack:
-            upstreams = await stack.enter_async_context(UpstreamManager(configs))
+            upstreams = await stack.enter_async_context(UpstreamManager(configs, sandbox=(mode == "protected")))
             ev("mcp.connected", servers={n: sorted(u.tools) for n, u in upstreams.upstreams.items()})
 
             if mode == "protected":
