@@ -20,6 +20,7 @@ import mcp_types as types
 from mcp.client import Client
 
 from vajra.config import ToolConfig, UpstreamConfig, VajraConfig
+from vajra.isolation import ContainerSpec
 from vajra.proxy import SERVER_INSTRUCTIONS, UpstreamManager, build_server
 from vajra.proxy.upstream import exposed_tool_name
 from vajra.quarantine import QuarantinedReader, with_quarantine
@@ -57,9 +58,23 @@ def system_prompt(scenario: Scenario, mode: Mode) -> str:
     return base + (PROTECTED_ADDENDUM if mode == "protected" else "")
 
 
+DEMO_DIR = Path(__file__).resolve().parents[1]
+
+
 def upstream_configs(outbox: Path) -> dict[str, UpstreamConfig]:
     def cfg(role: str, **kw: Any) -> UpstreamConfig:
-        return UpstreamConfig(role, sys.executable, args=(MOCK_SERVERS, "--role", role), env={"VAJRA_OUTBOX": str(outbox)}, **kw)
+        # How the same server runs when Docker isolation is available (container paths).
+        container = ContainerSpec(
+            command="python",
+            args=("/app/demo/backend/mock_servers.py", "--role", role),
+            mounts=((str(DEMO_DIR), "/app/demo", True), (str(outbox.parent), "/out", False)),
+            network=role == "web",
+            env={"VAJRA_OUTBOX": "/out/" + outbox.name, "VAJRA_HOST_ALIAS": "host.docker.internal"},
+        )
+        return UpstreamConfig(
+            role, sys.executable, args=(MOCK_SERVERS, "--role", role), env={"VAJRA_OUTBOX": str(outbox)},
+            container=container, **kw,
+        )
 
     return {
         "files": cfg("files"),
@@ -93,7 +108,11 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
            servers=list(configs), task=scenario.task)
 
         async with AsyncExitStack() as stack:
-            upstreams = await stack.enter_async_context(UpstreamManager(configs, sandbox=(mode == "protected")))
+            protected = mode == "protected"
+            upstreams = await stack.enter_async_context(
+                UpstreamManager(configs, sandbox=protected, isolation="auto" if protected else "none")
+            )
+            ev("sandbox.isolation", servers={n: u.isolation for n, u in upstreams.upstreams.items()})
             ev("mcp.connected", servers={n: sorted(u.tools) for n, u in upstreams.upstreams.items()})
 
             if mode == "protected":

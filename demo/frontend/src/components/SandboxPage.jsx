@@ -20,7 +20,10 @@ export function SandboxPage() {
   useEffect(() => () => clearInterval(timer.current), [])
   // ?autoimport=1 starts the import on load (hands-free demo / screen recording).
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('autoimport')) importTools()
+    if (new URLSearchParams(window.location.search).get('autoimport')) {
+      importTools()
+      runProof()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -43,6 +46,17 @@ export function SandboxPage() {
     }
   }
 
+  const [proof, setProof] = useState(null)
+  const [proving, setProving] = useState(false)
+  const runProof = async () => {
+    setProving(true)
+    try {
+      setProof(await (await fetch('/api/isolation')).json())
+    } finally {
+      setProving(false)
+    }
+  }
+
   const tools = data?.tools || []
   const current = tools[done] // the one inside the sandbox right now
   const processed = tools.slice(0, done)
@@ -61,6 +75,14 @@ export function SandboxPage() {
           {loading ? 'Connecting to servers…' : data ? '↻ Import again' : '📥 Import tools from MCP servers'}
         </button>
       </div>
+
+      {data?.isolation && (
+        <div className="iso-strip">
+          {Object.entries(data.isolation).map(([s, d]) => (
+            <span key={s} className="iso-chip">🔒 <b>{s}</b> {d}</span>
+          ))}
+        </div>
+      )}
 
       <section className="sbx">
         <div className="sbx-col">
@@ -116,6 +138,40 @@ export function SandboxPage() {
             ))}
           </ul>
         </div>
+      </section>
+
+      <section className="box proof">
+        <div className="proof-head">
+          <div>
+            <h2 className="section-title">OS sandbox proof</h2>
+            <p className="muted">
+              A deliberately misbehaving MCP server tries to start another program and grab 512 MB of memory, once without
+              VAJRA's sandbox and once inside it.
+            </p>
+          </div>
+          <button className="btn primary" onClick={runProof} disabled={proving}>
+            {proving ? 'Running…' : '🧪 Run the escape test'}
+          </button>
+        </div>
+        {proof && (
+          <table className="plain-table proof-table">
+            <thead>
+              <tr><th></th><th>Start another program</th><th>Grab 512 MB of memory</th></tr>
+            </thead>
+            <tbody>
+              {proof.map((r) => (
+                <tr key={r.isolation}>
+                  <td><b>{r.sandbox ? '🛡️ Inside VAJRA sandbox' : '⚠️ No sandbox'}</b><div className="muted">{r.isolation}</div></td>
+                  {[r.start_program, r.grab_memory].map((v, i) => (
+                    <td key={i} className={v.startsWith('blocked') ? 'cell-ok' : 'cell-bad'}>
+                      {v.startsWith('blocked') ? '⛔ ' : '⚠️ '}{v}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </div>
   )

@@ -14,6 +14,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from .isolation import ContainerSpec
+
 from .taint.labels import Integrity
 
 _UPSTREAM_NAME = re.compile(r"^[A-Za-z0-9-]+$")
@@ -55,6 +57,8 @@ class UpstreamConfig:
     cwd: str | None = None
     output: Integrity = Integrity.UNTRUSTED
     tools: dict[str, ToolConfig] = field(default_factory=dict)
+    container: ContainerSpec | None = None
+    """How to run this server in Docker (container paths). Used when Docker isolation is available."""
 
     def tool(self, name: str) -> ToolConfig:
         return self.tools.get(name, ToolConfig())

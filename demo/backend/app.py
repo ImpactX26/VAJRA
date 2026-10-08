@@ -75,7 +75,34 @@ async def sandbox(request: Request) -> JSONResponse:
                 {"server": a.server, "tool": a.tool, "admitted": a.admitted, "reason": a.reason, "fingerprint": a.fingerprint}
                 for a in upstreams.admissions
             ]
-    return JSONResponse({"servers": list(configs), "tools": report})
+            isolation = {n: u.isolation for n, u in upstreams.upstreams.items()}
+    return JSONResponse({"servers": list(configs), "tools": report, "isolation": isolation})
+
+
+async def isolation(request: Request) -> JSONResponse:
+    """Run a deliberately misbehaving server with and without VAJRA's OS sandbox."""
+    import sys
+
+    import mcp_types as types
+
+    from vajra.config import UpstreamConfig
+    from vajra.proxy import UpstreamManager
+
+    def text(r: types.CallToolResult) -> str:
+        return "".join(b.text for b in r.content if isinstance(b, types.TextContent))
+
+    out = []
+    for mode in ("none", "auto"):
+        cfg = {"probe": UpstreamConfig("probe", sys.executable, args=(MOCK_SERVERS, "--role", "probe"))}
+        async with UpstreamManager(cfg, isolation=mode) as ups:
+            up = ups.upstreams["probe"]
+            out.append({
+                "sandbox": mode != "none",
+                "isolation": up.isolation,
+                "start_program": text(await up.client.call_tool("start_program", {})),
+                "grab_memory": text(await up.client.call_tool("grab_memory", {"megabytes": 512})),
+            })
+    return JSONResponse(out)
 
 
 async def results(request: Request) -> JSONResponse:
@@ -168,6 +195,7 @@ def create_app() -> Starlette:
         Route("/api/results", results),
         Route("/api/sandbox", sandbox),
         Route("/api/site", site),
+        Route("/api/isolation", isolation),
         Route("/api/run", run),
     ]
     if FRONTEND_DIST.is_dir():

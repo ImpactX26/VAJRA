@@ -112,3 +112,34 @@ Scenario 3 matters most for judges: a classifier sees nothing malicious in that 
 Presenter tips: use **⏸ Pause** and **⏭ Step** to walk one hop at a time. For a hands-free loop or a backup screen recording, open
 `http://127.0.0.1:8000/?autorun=poisoned-invoice&provider=scripted&speed=Normal` (works for any scenario id).
 If Groq rate-limits you mid-demo, the timeline shows a ⏳ card and retries. Switch to the offline LLM if it persists.
+
+## Sandbox (new website)
+
+VAJRA runs every upstream MCP server inside an **operating-system sandbox**, and checks everything that comes out of it before anyone else sees it:
+
+| Layer | What happens | Where |
+|---|---|---|
+| OS isolation | Each server runs in a **Windows Job Object** (POSIX: rlimits): memory cap, CPU-time cap, no extra processes, killed on disconnect, isolated temp folder. With Docker installed and the image built, servers run in **containers** instead (read-only, no network except the fetcher, all capabilities dropped). | `src/vajra/jail.py`, `src/vajra/isolation.py` |
+| Tool admission | Tool definitions are checked: pin mismatch, shadowing, hidden characters, malformed. Failing tools are burned. | `src/vajra/sandbox.py` |
+| Content sandbox | For tools configured `sanitize = "html"`, everything a person would not see (hidden elements, comments, scripts, invisible characters) is burned. | `src/vajra/sandbox.py` |
+| Taint layers | What survives is still labelled untrusted, sealed from the planner, summarised by the tool-less reader, and policy-checked. The clean result is delivered to the user. | `src/vajra/taint/` |
+
+Proof: `tests/test_isolation.py` runs a misbehaving server. Without isolation it starts programs and allocates 512 MB; inside VAJRA's sandbox both are blocked by the OS. The **Sandbox** page runs the same test live.
+
+### Live fetch demo
+
+```powershell
+..\VAJRA\.venv\Scripts\python -m demo.backend.site_server              # separate website on :8090
+$env:PYTHONPATH="src"; ..\VAJRA\.venv\Scripts\python -m demo.backend --port 8001
+# open http://127.0.0.1:8001/#/live
+```
+
+### Docker isolation (optional)
+
+Install Docker Desktop, then build the server image once:
+
+```powershell
+docker build -t vajra-mcp-servers -f docker/Dockerfile.mcp docker/
+```
+
+VAJRA detects Docker and the image automatically and switches from Job Objects to containers (`isolation="auto"`).

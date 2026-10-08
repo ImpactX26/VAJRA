@@ -16,6 +16,7 @@ from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
 from ..config import NAMESPACE_SEP, UpstreamConfig
+from ..isolation import Limits, describe, docker_command, docker_ready, jail_command
 from ..sandbox import Admission, inspect_tool
 
 log = logging.getLogger("vajra.upstream")
@@ -30,6 +31,8 @@ class Upstream:
     fingerprints: dict[str, str] = field(default_factory=dict)
     rejected: dict[str, str] = field(default_factory=dict)
     """Tools burned in the sandbox at connect time, with the reason."""
+    isolation: str = "no isolation"
+    """How the server process is isolated by the operating system."""
 
     @property
     def name(self) -> str:
@@ -43,9 +46,14 @@ class UnknownRouteError(LookupError):
 class UpstreamManager:
     """Owns one client session per configured upstream and routes calls to them."""
 
-    def __init__(self, configs: dict[str, UpstreamConfig], sandbox: bool = True) -> None:
+    def __init__(
+        self, configs: dict[str, UpstreamConfig], sandbox: bool = True, isolation: str = "auto", limits: Limits = Limits()
+    ) -> None:
+        """``isolation``: "auto" (Docker if ready, else Job Object), "docker", "job" or "none"."""
         self._configs = configs
         self._sandbox = sandbox
+        self._isolation = isolation
+        self._limits = limits
         self.admissions: list[Admission] = []
         """Sandbox verdict for every tool offered by every upstream, in connection order."""
         self._stack = AsyncExitStack()
@@ -71,9 +79,17 @@ class UpstreamManager:
             # Isolated scratch directory per server; removed when the manager closes.
             cwd = tempfile.mkdtemp(prefix=f"vajra-sandbox-{cfg.name}-")
             self._stack.callback(shutil.rmtree, cwd, True)
-        params = StdioServerParameters(command=cfg.command, args=list(cfg.args), env=cfg.env, cwd=cwd)
+        mode = self._mode_for(cfg)
+        if mode == "docker":
+            command, args = docker_command(cfg.container, self._limits)
+        elif mode == "job":
+            command, args = jail_command(cfg.command, list(cfg.args), self._limits)
+        else:
+            command, args = cfg.command, list(cfg.args)
+        params = StdioServerParameters(command=command, args=args, env=cfg.env, cwd=cwd)
         client = await self._stack.enter_async_context(Client(params))
-        upstream = Upstream(cfg, client)
+        upstream = Upstream(cfg, client, isolation=describe(mode, self._limits, bool(cfg.container and cfg.container.network)))
+        log.info("ISOLATE upstream=%s %s", cfg.name, upstream.isolation)
         taken = {t for u in self.upstreams.values() for t in u.tools}
 
         for tool in await _list_all_tools(client):
@@ -94,6 +110,13 @@ class UpstreamManager:
 
         self.upstreams[cfg.name] = upstream
         log.info("connected upstream %s: %d tools, %d resources", cfg.name, len(upstream.tools), len(upstream.resources))
+
+    def _mode_for(self, cfg: UpstreamConfig) -> str:
+        if self._isolation in ("auto", "docker") and cfg.container is not None and docker_ready():
+            return "docker"
+        if self._isolation in ("auto", "docker", "job"):
+            return "job"
+        return "none"
 
     def route_tool(self, exposed_name: str) -> tuple[Upstream, str]:
         upstream_name, sep, tool = exposed_name.partition(NAMESPACE_SEP)

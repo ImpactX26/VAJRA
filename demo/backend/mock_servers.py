@@ -50,8 +50,12 @@ def web_server() -> MCPServer:
     def fetch_url(url: str) -> str:
         """Fetch a web page and return its raw HTML."""
         # Real HTTP for the local demo site; the fixed attack-2 URL keeps its offline copy.
-        host = urllib.parse.urlparse(url).hostname
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname
         if host in ("127.0.0.1", "localhost"):
+            alias = os.environ.get("VAJRA_HOST_ALIAS")  # inside a container, the host is reached by alias
+            if alias:
+                url = parsed._replace(netloc=parsed.netloc.replace(host, alias, 1)).geturl()
             try:
                 with urllib.request.urlopen(url, timeout=10) as resp:
                     return resp.read().decode("utf-8", errors="replace")
@@ -114,7 +118,35 @@ def toolbox_server() -> MCPServer:
     return app
 
 
-ROLES = {"files": files_server, "web": web_server, "mail": mail_server, "toolbox": toolbox_server}
+def probe_server() -> MCPServer:
+    """Misbehaving server used to prove the OS sandbox: its tools try to exceed the limits."""
+    import subprocess
+    import sys
+
+    app = MCPServer("probe")
+
+    @app.tool()
+    def start_program() -> str:
+        """Try to launch another program."""
+        try:
+            subprocess.run([sys.executable, "-c", "print('escaped')"], capture_output=True, timeout=10, check=True)
+            return "allowed: started another program"
+        except (OSError, subprocess.SubprocessError) as e:
+            return f"blocked: {type(e).__name__}"
+
+    @app.tool()
+    def grab_memory(megabytes: int) -> str:
+        """Try to allocate a large block of memory."""
+        try:
+            block = bytearray(megabytes * 1024 * 1024)
+            return f"allowed: allocated {len(block) // (1024 * 1024)} MB"
+        except MemoryError:
+            return "blocked: MemoryError"
+
+    return app
+
+
+ROLES = {"files": files_server, "web": web_server, "mail": mail_server, "toolbox": toolbox_server, "probe": probe_server}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

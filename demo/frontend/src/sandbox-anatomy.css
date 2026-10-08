@@ -85,3 +85,13 @@
 .delivered-box { border: 2px solid var(--safe); background: var(--safe-bg); border-radius: 12px; padding: 10px 14px; }
 .delivered-box h3 { margin: 0 0 6px; font-size: 15px; color: var(--safe-text); }
 .delivered-box pre { margin: 0 0 6px; white-space: pre-wrap; font: 14px/1.55 system-ui, sans-serif; color: var(--text); }
+
+/* OS isolation */
+.iso-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.iso-chip { font-size: 12.5px; padding: 5px 11px; border-radius: 99px; background: var(--info-bg); border: 1px solid #bcd3fb; }
+.proof { display: flex; flex-direction: column; gap: 12px; }
+.proof-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.proof-head p { margin: 4px 0 0; max-width: 720px; }
+.proof-table td { vertical-align: top; }
+.proof-table td.cell-ok { background: var(--safe-bg); color: var(--safe-text); font-weight: 650; }
+.proof-table td.cell-bad { background: var(--danger-bg); color: var(--danger-text); font-weight: 650; }

@@ -60,6 +60,11 @@ export function buildSummary(events, mode, scenario) {
           add({ icon: '⚠️', tone: 'danger', text: 'The hidden text in that content went straight into the AI’s view.' })
         }
         break
+      case 'sandbox.isolation': {
+        const kinds = [...new Set(Object.values(ev.servers))].filter((k) => k !== 'no isolation')
+        if (kinds.length) add({ icon: '🔒', tone: 'safe', text: `The tool servers ran inside an OS sandbox: ${kinds.join('; ')}.` })
+        break
+      }
       case 'proxy.sanitize':
         if (ev.burned.length) {
           add({ icon: '🔥', tone: 'safe', text: `VAJRA's sandbox burned ${ev.burned.length} hidden part${ev.burned.length > 1 ? 's' : ''} of the content: things a person could not see.` })
