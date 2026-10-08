@@ -291,3 +291,15 @@ ul.plain { margin: 2px 0; padding-left: 18px; font-size: 13px; }
 .notice pre { margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--text); }
 .notice.withheld { border-color: rgba(18, 161, 80, 0.5); background: var(--safe-bg); }
 .notice.blocked { border-color: var(--danger); background: #fff7f8; }
+
+/* Third-party source evidence */
+.evidence { font-size: 13px; background: var(--info-bg); border: 1px solid #bcd3fb; border-radius: 10px; padding: 8px 12px; }
+.evidence summary { cursor: pointer; }
+.evidence summary code { font-family: var(--mono); }
+.evidence table { width: 100%; border-collapse: collapse; margin-top: 8px; background: var(--panel); }
+.evidence th, .evidence td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+.evidence th { background: var(--panel-2); font-size: 12px; }
+.evidence td a { color: var(--info); overflow-wrap: anywhere; }
+.evidence td code { font-family: var(--mono); font-size: 11.5px; }
+.evidence td.lines { font-family: var(--mono); white-space: nowrap; font-weight: 600; }
+.evidence p { margin: 6px 0 0; }

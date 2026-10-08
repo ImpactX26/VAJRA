@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Doc } from '../highlight.jsx'
+import { SourceEvidence } from './Panels.jsx'
 import { GUIDE, LAYERS, STATUS } from '../injectionGuide.js'
 
 function Intro() {
@@ -120,6 +121,17 @@ export function InjectionsPage({ scenarios, onRunLive }) {
           <dd className="ia-run"><button className="run-both" onClick={() => onRunLive(current)}>▶ Run this attack live</button></dd>
         </dl>
       </section>
+
+      {scenario.source && (
+        <section className="ia-card">
+          <h3>🔎 Proof this is the real benchmark payload</h3>
+          <p className="muted">
+            Every piece of this test case comes from these exact files and lines in the AgentDojo repository, pinned to one
+            commit. Click any file to open it on GitHub at those lines.
+          </p>
+          <SourceEvidence source={scenario.source} open />
+        </section>
+      )}
 
       <section className="ia-two">
         <div className="ia-card">

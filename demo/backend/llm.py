@@ -20,7 +20,6 @@ import httpx
 from .scenarios import Scenario
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 HANDLE = re.compile(r"\$vajra:h_[0-9a-f]{32}")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")

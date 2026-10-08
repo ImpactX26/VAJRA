@@ -22,6 +22,36 @@ export function ScenarioPicker({ scenarios, selected, onSelect, disabled }) {
   )
 }
 
+/** Exact upstream files and line ranges a third-party payload was built from, with pinned links. */
+export function SourceEvidence({ source, open = false }) {
+  if (!source) return null
+  return (
+    <details className="evidence" open={open}>
+      <summary>
+        📚 Source: <b>{source.name}</b> · commit <code>{source.commit.slice(0, 10)}</code>{' '}
+        <span className="muted">({source.evidence.length} exact files and lines; click to {open ? 'collapse' : 'expand'})</span>
+      </summary>
+      <table>
+        <thead>
+          <tr><th>What</th><th>File</th><th>Lines</th></tr>
+        </thead>
+        <tbody>
+          {source.evidence.map((e) => (
+            <tr key={e.url}>
+              <td>{e.what}</td>
+              <td><a href={e.url} target="_blank" rel="noreferrer"><code>{e.path}</code></a></td>
+              <td className="lines">{e.lines}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted">
+        Rebuild the exact file yourself: <code>{source.rebuild}</code>
+      </p>
+    </details>
+  )
+}
+
 export function FileViewer({ scenario }) {
   const [tab, setTab] = useState(0)
   const box = useRef(null)
