@@ -1,5 +1,6 @@
-import { useState } from 'react'
 import { Doc } from '../highlight.jsx'
+import { href } from '../router.js'
+import { SourceEvidence } from './Panels.jsx'
 import { GUIDE, LAYERS, STATUS } from '../injectionGuide.js'
 
 function Intro() {
@@ -85,8 +86,9 @@ function Matrix({ scenarios, onPick, current }) {
   )
 }
 
-export function InjectionsPage({ scenarios, onRunLive }) {
-  const [current, setCurrent] = useState(scenarios[0].id)
+export function InjectionsPage({ scenarios, currentId }) {
+  const current = scenarios.some((s) => s.id === currentId) ? currentId : scenarios[0].id
+  const setCurrent = (id) => { window.location.hash = href.anatomy(id) }
   const scenario = scenarios.find((s) => s.id === current)
   const guide = GUIDE[current]
   const payload = scenario.file_contents[0]
@@ -117,9 +119,20 @@ export function InjectionsPage({ scenarios, onRunLive }) {
           <dt>Enters the agent via</dt><dd><code>{guide.entry}</code></dd>
           <dt>Attacker’s goal</dt><dd>{guide.target}</dd>
           <dt>User’s actual task</dt><dd>“{scenario.task}”</dd>
-          <dd className="ia-run"><button className="run-both" onClick={() => onRunLive(current)}>▶ Run this attack live</button></dd>
+          <dd className="ia-run"><a className="btn primary" href={href.demo(current)}>▶ Watch this attack live</a></dd>
         </dl>
       </section>
+
+      {scenario.source && (
+        <section className="ia-card">
+          <h3>🔎 Proof this is the real benchmark payload</h3>
+          <p className="muted">
+            Every piece of this test case comes from these exact files and lines in the AgentDojo repository, pinned to one
+            commit. Click any file to open it on GitHub at those lines.
+          </p>
+          <SourceEvidence source={scenario.source} open />
+        </section>
+      )}
 
       <section className="ia-two">
         <div className="ia-card">

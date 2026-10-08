@@ -92,7 +92,6 @@ def render(rows: list[dict[str, Any]], meta: dict[str, Any]) -> str:
 async def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m demo.eval", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--provider", choices=["scripted", "groq"], default="scripted")
-    parser.add_argument("--model", help="Groq model id (default: GROQ_MODEL or openai/gpt-oss-120b)")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--scenarios", nargs="*", choices=list(SCENARIOS), default=list(SCENARIOS))
     parser.add_argument("--out", default="evaluation", help="output file stem under docs/")
@@ -103,8 +102,6 @@ async def main() -> None:
     if args.provider == "groq":
         if not groq:
             raise SystemExit("GROQ_API_KEY is not set (put it in .env)")
-        if args.model:
-            groq["model"] = args.model
 
     rows = []
     for sid in args.scenarios:

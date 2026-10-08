@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { InjectionsPage } from './components/InjectionsPage.jsx'
-import { FileViewer, RunPanel, ScenarioPicker } from './components/Panels.jsx'
+import { FileViewer, RunPanel, ScenarioPicker, SourceEvidence } from './components/Panels.jsx'
 import { useRun } from './useRun.js'
 
 const SPEEDS = { Slow: 1400, Normal: 750, Fast: 250 }
@@ -45,7 +45,7 @@ export default function App() {
 
   const scenario = scenarios.find((s) => s.id === selected)
   const busy = unprotected.phase === 'running' || protectedRun.phase === 'running'
-  const params = (mode) => ({ scenario: selected, mode, provider, ...(provider === 'groq' ? { model } : {}) })
+  const params = (mode) => ({ scenario: selected, mode, provider })
   const providerLabel = provider === 'groq' ? `Groq · ${model}` : 'offline gullible LLM'
 
   const selectScenario = (id) => {
@@ -113,14 +113,6 @@ export default function App() {
               <option value="scripted">Offline: worst-case gullible LLM</option>
             </select>
           </label>
-          {provider === 'groq' && (
-            <label>
-              Model
-              <select value={model} onChange={(e) => setModel(e.target.value)} disabled={busy}>
-                {status.groq_models.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </label>
-          )}
           <label>
             Replay speed
             <select value={speed} onChange={(e) => setSpeed(e.target.value)}>
@@ -144,15 +136,7 @@ export default function App() {
             <h2>{scenario.title}</h2>
             <p className="attack-type">{scenario.attack}</p>
             <p>{scenario.summary}</p>
-            {scenario.source && (
-              <p className="source-badge">
-                📚 Source:{' '}
-                <a href={`${scenario.source.url}/tree/${scenario.source.commit}`} target="_blank" rel="noreferrer">
-                  {scenario.source.name}
-                </a>
-                <span>{scenario.source.details}</span>
-              </p>
-            )}
+            <SourceEvidence source={scenario.source} />
             <div className="task">
               <span className="task-label">User task</span>
               <p>“{scenario.task}”</p>

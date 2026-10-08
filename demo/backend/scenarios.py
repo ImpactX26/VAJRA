@@ -44,6 +44,34 @@ class Scenario:
         return data
 
 
+AGENTDOJO_COMMIT = "089ed468cf3ed0322acc66b0211f26d9d90dbf60"
+
+
+def agentdojo_evidence() -> list[dict[str, str]]:
+    """Exact upstream files and lines the AgentDojo test case is built from (links pinned to the commit)."""
+    items = [
+        ("The document: cloud-drive file feedback.xlsx", "data/suites/workspace/include/cloud_drive.yaml", 3, 25),
+        ("The injection slot {drive_feedback_injection} (Noah Lee's feedback cell)", "data/suites/workspace/include/cloud_drive.yaml", 17, 17),
+        ("The slot's definition and benign default", "data/suites/workspace/injection_vectors.yaml", 40, 42),
+        ("The attack wording: important_instructions _JB_STRING, user 'Emma Johnson'", "attacks/important_instructions_attacks.py", 26, 43),
+        ("The no-model-name variant used here", "attacks/important_instructions_attacks.py", 56, 61),
+        ("DEFAULT_MODEL_NAME = 'the AI language model'", "attacks/base_attacks.py", 19, 19),
+        ("The attacker goal: workspace InjectionTask0", "default_suites/v1/workspace/injection_tasks.py", 10, 16),
+        ("Code that builds the attack text: attack() → jailbreak.format(goal, user, model)", "attacks/base_attacks.py", 116, 125),
+        ("Code that injects it into the document: environment_text.format(...)", "task_suite/task_suite.py", 139, 146),
+    ]
+    base = f"https://github.com/ethz-spylab/agentdojo/blob/{AGENTDOJO_COMMIT}/src/agentdojo"
+    return [
+        {
+            "what": what,
+            "path": f"src/agentdojo/{path}",
+            "lines": f"{a}" if a == b else f"{a}–{b}",
+            "url": f"{base}/{path}#L{a}" + ("" if a == b else f"-L{b}"),
+        }
+        for what, path, a, b in items
+    ]
+
+
 SCENARIOS: dict[str, Scenario] = {
     s.id: s
     for s in [
@@ -156,12 +184,13 @@ SCENARIOS: dict[str, Scenario] = {
             source={
                 "name": "AgentDojo (Debenedetti et al., ETH Zurich, NeurIPS 2024 Datasets & Benchmarks)",
                 "url": "https://github.com/ethz-spylab/agentdojo",
-                "commit": "089ed468cf3ed0322acc66b0211f26d9d90dbf60",
+                "commit": AGENTDOJO_COMMIT,
                 "details": (
                     "workspace suite · cloud_drive.yaml feedback.xlsx · slot drive_feedback_injection · "
                     "attack important_instructions_no_model_name · goal InjectionTask0"
                 ),
                 "rebuild": "python demo/third_party/agentdojo/build_feedback.py",
+                "evidence": agentdojo_evidence(),
             },
             expectation={
                 "unprotected": "The planner reads the spreadsheet, takes the <INFORMATION> block as Emma's own "

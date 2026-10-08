@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import httpx
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -17,15 +16,14 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from .llm import DEFAULT_GROQ_MODEL, GROQ_MODELS_URL
+from .llm import DEFAULT_GROQ_MODEL as GROQ_MODEL
 from .runner import run_scenario
 from .scenarios import SCENARIOS
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST = ROOT / "demo" / "frontend" / "dist"
 log = logging.getLogger("vajra.demo")
-_NON_CHAT = ("whisper", "orpheus", "guard", "allam")
-_models_cache: list[str] | None = None
+RESULT_FILES = ["evaluation_groq_agentdojo", "evaluation_groq", "evaluation_offline"]
 
 
 def load_dotenv(path: Path) -> None:
@@ -39,34 +37,24 @@ def load_dotenv(path: Path) -> None:
 
 
 def groq_settings() -> dict[str, str] | None:
+    # The demo is pinned to one model so every run, live or recorded, is comparable.
     key = os.environ.get("GROQ_API_KEY", "").strip()
-    return {"api_key": key, "model": os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)} if key else None
-
-
-async def groq_models(api_key: str) -> list[str]:
-    """Chat models this key can use (cached). Falls back to the default model if the listing fails."""
-    global _models_cache
-    if _models_cache is None:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(GROQ_MODELS_URL, headers={"Authorization": f"Bearer {api_key}"})
-                resp.raise_for_status()
-            ids = sorted(m["id"] for m in resp.json()["data"] if m.get("active", True))
-            _models_cache = [i for i in ids if not any(x in i for x in _NON_CHAT)]
-        except (httpx.HTTPError, KeyError, ValueError):
-            log.warning("could not list Groq models", exc_info=True)
-            return [os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)]
-    return _models_cache
+    return {"api_key": key, "model": GROQ_MODEL} if key else None
 
 
 async def status(request: Request) -> JSONResponse:
     groq = groq_settings()
-    if groq is None:
-        return JSONResponse({"groq_available": False, "groq_model": None, "groq_models": []})
-    models = await groq_models(groq["api_key"])
-    if groq["model"] not in models:
-        models = [groq["model"], *models]
-    return JSONResponse({"groq_available": True, "groq_model": groq["model"], "groq_models": models})
+    return JSONResponse({"groq_available": groq is not None, "groq_model": GROQ_MODEL})
+
+
+async def results(request: Request) -> JSONResponse:
+    """Recorded evaluation runs (written by python -m demo.eval)."""
+    out = []
+    for stem in RESULT_FILES:
+        path = ROOT / "docs" / f"{stem}.json"
+        if path.is_file():
+            out.append({"id": stem, **json.loads(path.read_text(encoding="utf-8"))})
+    return JSONResponse(out)
 
 
 async def scenarios(request: Request) -> JSONResponse:
@@ -82,10 +70,6 @@ async def run(request: Request) -> Any:
         return JSONResponse({"error": "bad scenario/mode/provider"}, status_code=400)
 
     groq = groq_settings()
-    if groq and q.get("model"):
-        if q["model"] not in await groq_models(groq["api_key"]) and q["model"] != groq["model"]:
-            return JSONResponse({"error": "unknown model"}, status_code=400)
-        groq["model"] = q["model"]
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
@@ -117,6 +101,7 @@ def create_app() -> Starlette:
     routes: list[Any] = [
         Route("/api/status", status),
         Route("/api/scenarios", scenarios),
+        Route("/api/results", results),
         Route("/api/run", run),
     ]
     if FRONTEND_DIST.is_dir():
