@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ..config import VajraConfig
-from .labels import Label, Source, join_all
+from .labels import Integrity, Label, Source, join_all
 
 
 class PolicyViolation(Exception):
@@ -43,6 +43,10 @@ class PolicyEngine:
                     f"{qualified}: argument {arg!r} carries {effective.describe()} data; "
                     "this parameter only accepts trusted data"
                 )
+
+    def output_integrity(self, upstream: str, tool: str) -> Integrity:
+        """The configured integrity of a tool's own output, before joining in its inputs."""
+        return self._config.upstreams[upstream].tool_output(tool)
 
     def tool_output_label(
         self, upstream: str, tool: str, call_id: str, arg_labels: Mapping[str, Label], context: Label

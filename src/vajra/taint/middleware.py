@@ -45,6 +45,8 @@ class TaintMiddleware:
         self.on_event = on_event
         self.context: Label = TRUSTED
         """Label of everything the planner has observed. Monotone: it only ever rises."""
+        self.withheld: list[dict[str, Any]] = []
+        self.blocked: list[dict[str, Any]] = []
 
     async def call_tool(
         self, upstream: str, tool: str, arguments: dict[str, Any] | None, invoke: InvokeTool
@@ -63,6 +65,7 @@ class TaintMiddleware:
         except (PolicyViolation, UnknownHandleError) as e:
             audit.warning("BLOCK tool=%s reason=%s", qualified, e)
             self._emit("block", tool=qualified, reason=str(e))
+            self.blocked.append({"tool": qualified, "reason": str(e)})
             return _blocked(str(e))
 
         call_id = secrets.token_hex(4)
@@ -95,6 +98,16 @@ class TaintMiddleware:
         value = self.store.put(label, rendered, structured=result.structured_content)
         audit.info("WITHHOLD tool=%s call=%s handle=%s label=%s", qualified, call_id, value.handle, label.describe())
         self._emit("withhold", tool=qualified, call_id=call_id, handle=value.token, chars=len(value.text))
+        self.withheld.append({
+            "tool": qualified,
+            # Only planner-written (trusted) arguments are echoed: untrusted ones may hold attacker text.
+            "args": {k: _short(v) for k, v in (arguments or {}).items() if arg_labels[k].trusted},
+            "chars": len(value.text),
+            "handle": value.token,
+            # "external" = fresh outside content; otherwise it is derived from data that was already withheld.
+            "external": self.policy.output_integrity(upstream, tool) is not Integrity.TRUSTED
+            and all(l.trusted for l in arg_labels.values()),
+        })
         return types.CallToolResult(content=[types.TextContent(text=_handle_notice(value))], is_error=result.is_error)
 
     async def read_resource(self, upstream: str, uri: str, invoke: ReadResource) -> types.ReadResourceResult:
@@ -112,9 +125,21 @@ class TaintMiddleware:
         mime = next((c.mime_type for c in result.contents if c.mime_type), None)
         value = self.store.put(label, _render_resource(result.contents), mime_type=mime)
         audit.info("WITHHOLD resource=%s/%s handle=%s label=%s", upstream, uri, value.handle, label.describe())
+        self.withheld.append(
+            {"tool": f"{upstream}/resource", "args": {"uri": uri}, "chars": len(value.text), "handle": value.token, "external": True}
+        )
         return types.ReadResourceResult(
             contents=[types.TextResourceContents(uri=uri, mime_type="text/plain", text=_handle_notice(value))]
         )
+
+    def security_report(self) -> dict[str, Any]:
+        """What VAJRA did for this session, for showing to the human user."""
+        return {
+            "withheld": list(self.withheld),
+            "blocked": list(self.blocked),
+            "context_tainted": not self.context.trusted,
+            "notice": security_notice(self.withheld, self.blocked, not self.context.trusted),
+        }
 
     def withholds(self, output: Integrity) -> bool:
         """Whether output of this integrity is replaced by a handle (so an output schema can't be honoured)."""
@@ -129,6 +154,36 @@ class TaintMiddleware:
     def _emit(self, kind: str, **fields: Any) -> None:
         if self.on_event is not None:
             self.on_event({"type": f"proxy.{kind}", **fields})
+
+
+def security_notice(withheld: list[dict[str, Any]], blocked: list[dict[str, Any]], context_tainted: bool) -> str:
+    """Plain-language summary for the user. It states what was withheld and blocked. It never claims an
+    injection was "detected": VAJRA does not inspect content, it contains it."""
+    lines: list[str] = []
+    external = [w for w in withheld if w["external"]]
+    derived = len(withheld) - len(external)
+    if external:
+        lines.append("VAJRA withheld untrusted content from the agent's planner:")
+        for w in external:
+            args = ", ".join(f"{k}={v}" for k, v in w["args"].items())
+            lines.append(f"  - {w['tool']}({args}): {w['chars']} chars from an outside source")
+        lines.append(
+            "  The planner never saw this content, so any instructions hidden in it could not steer the agent's actions."
+        )
+        if derived:
+            lines.append(f"  {derived} result(s) derived from it (summaries, confirmations) also stayed untrusted.")
+    if blocked:
+        lines.append(f"VAJRA blocked {len(blocked)} action(s):")
+        lines.extend(f"  - {b['reason']}" for b in blocked)
+        lines.append("  Nothing was executed. If you intended this action, confirm the details (e.g. the recipient) yourself.")
+    if context_tainted:
+        lines.append("The planner was shown untrusted content directly, so further actions were restricted for this session.")
+    return "\n".join(lines) if lines else "VAJRA: no untrusted content was involved in this request."
+
+
+def _short(value: Any, limit: int = 80) -> str:
+    s = value if isinstance(value, str) else json.dumps(value)
+    return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
 def _blocked(reason: str) -> types.CallToolResult:

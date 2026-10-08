@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { InjectionsPage } from './components/InjectionsPage.jsx'
 import { FileViewer, RunPanel, ScenarioPicker } from './components/Panels.jsx'
 import { useRun } from './useRun.js'
 
 const SPEEDS = { Slow: 1400, Normal: 750, Fast: 250 }
+const PAGES = { '#/': 'Live demo', '#/injections': 'Injection anatomy' }
+const currentPage = () => (PAGES[window.location.hash] ? window.location.hash : '#/')
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -13,6 +16,7 @@ export default function App() {
   const [speed, setSpeed] = useState('Normal')
   const [paused, setPaused] = useState(false)
   const [loadError, setLoadError] = useState(null)
+  const [page, setPage] = useState(currentPage)
   const unprotected = useRun(SPEEDS[speed], paused)
   const protectedRun = useRun(SPEEDS[speed], paused)
 
@@ -28,6 +32,15 @@ export default function App() {
         }
       })
       .catch(() => setLoadError('Cannot reach the demo backend. Start it with: python -m demo.backend'))
+  }, [])
+
+  useEffect(() => {
+    const onHash = () => {
+      setPage(currentPage())
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
   const scenario = scenarios.find((s) => s.id === selected)
@@ -60,6 +73,13 @@ export default function App() {
     setTimeout(runBoth, 0)
   })
 
+  // From the anatomy page: jump to the live demo and run both agents on that attack.
+  const runLive = (id) => {
+    selectScenario(id)
+    autorun.set('autorun', id)
+    window.location.hash = '#/'
+  }
+
   const step = () => {
     unprotected.step()
     protectedRun.step()
@@ -73,12 +93,17 @@ export default function App() {
       <header className="hero">
         <div>
           <h1><span className="logo">⚡</span> VAJRA</h1>
+          <nav className="nav">
+            {Object.entries(PAGES).map(([hash, label]) => (
+              <a key={hash} href={hash} className={page === hash ? 'active' : ''}>{label}</a>
+            ))}
+          </nav>
           <p className="tagline">
             Zero-trust MCP proxy. It stops prompt injection <em>architecturally</em>, with taint tracking,
             a tool-less quarantine LLM and deterministic policy. No AI classifiers involved.
           </p>
         </div>
-        <div className="controls">
+        {page === '#/' && <div className="controls">
           <label>
             LLM
             <select value={provider} onChange={(e) => setProvider(e.target.value)} disabled={busy}>
@@ -104,45 +129,62 @@ export default function App() {
           </label>
           <button onClick={() => setPaused((p) => !p)}>{paused ? '▶ Resume' : '⏸ Pause'}</button>
           <button onClick={step} disabled={!paused}>⏭ Step</button>
-        </div>
+        </div>}
       </header>
 
-      <ScenarioPicker scenarios={scenarios} selected={selected} onSelect={selectScenario} disabled={busy} />
+      {page === '#/injections' ? (
+        <InjectionsPage scenarios={scenarios} onRunLive={runLive} />
+      ) : (
+        <>
 
-      <section className="scenario-detail">
-        <div className="scenario-text">
-          <h2>{scenario.title}</h2>
-          <p className="attack-type">{scenario.attack}</p>
-          <p>{scenario.summary}</p>
-          <div className="task">
-            <span className="task-label">User task</span>
-            <p>“{scenario.task}”</p>
+        <ScenarioPicker scenarios={scenarios} selected={selected} onSelect={selectScenario} disabled={busy} />
+
+        <section className="scenario-detail">
+          <div className="scenario-text">
+            <h2>{scenario.title}</h2>
+            <p className="attack-type">{scenario.attack}</p>
+            <p>{scenario.summary}</p>
+            {scenario.source && (
+              <p className="source-badge">
+                📚 Source:{' '}
+                <a href={`${scenario.source.url}/tree/${scenario.source.commit}`} target="_blank" rel="noreferrer">
+                  {scenario.source.name}
+                </a>
+                <span>{scenario.source.details}</span>
+              </p>
+            )}
+            <div className="task">
+              <span className="task-label">User task</span>
+              <p>“{scenario.task}”</p>
+            </div>
+            <button className="run-both" onClick={runBoth} disabled={busy}>
+              ▶ Run both agents (without VAJRA, then with VAJRA)
+            </button>
           </div>
-          <button className="run-both" onClick={runBoth} disabled={busy}>
-            ▶ Run both agents (without VAJRA, then with VAJRA)
-          </button>
-        </div>
-        <FileViewer key={scenario.id} scenario={scenario} />
-      </section>
+          <FileViewer key={scenario.id} scenario={scenario} />
+        </section>
 
-      <div className="panels">
-        <RunPanel
-          mode="unprotected"
-          run={unprotected}
-          scenario={scenario}
-          disabled={busy}
-          providerLabel={providerLabel}
-          onRun={() => unprotected.start(params('unprotected'))}
-        />
-        <RunPanel
-          mode="protected"
-          run={protectedRun}
-          scenario={scenario}
-          disabled={busy}
-          providerLabel={providerLabel}
-          onRun={() => protectedRun.start(params('protected'))}
-        />
-      </div>
+        <div className="panels">
+          <RunPanel
+            mode="unprotected"
+            run={unprotected}
+            scenario={scenario}
+            disabled={busy}
+            providerLabel={providerLabel}
+            onRun={() => unprotected.start(params('unprotected'))}
+          />
+          <RunPanel
+            mode="protected"
+            run={protectedRun}
+            scenario={scenario}
+            disabled={busy}
+            providerLabel={providerLabel}
+            onRun={() => protectedRun.start(params('protected'))}
+          />
+        </div>
+
+        </>
+      )}
 
       <footer className="legend">
         <h3>How VAJRA stops the attack</h3>

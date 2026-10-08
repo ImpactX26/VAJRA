@@ -121,6 +121,9 @@ class GullibleScriptedLLM:
         if read and send:
             self._exfil_to = send.group(1)
             self._queue.append(("files__read_file", {"path": read.group(1)}, "secret"))
+        # AgentDojo's phrasing (workspace InjectionTask0 style goals).
+        for body, to, subject in re.findall(r"email the text '([^']*)' to '([^']+)' using '([^']*)' as subject", text):
+            self._queue.append(("mail__send_email", {"to": to, "subject": subject, "body": body}, "exfil"))
 
     def _main_step(self, names: set[str], last: str) -> Message:
         doc = self._doc or ""

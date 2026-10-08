@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Doc, containsInjection, hasHandle } from '../highlight.jsx'
 
-const HIDDEN = new Set(['llm.request', 'outbox', 'verdict'])
+const HIDDEN = new Set(['llm.request', 'outbox', 'verdict', 'vajra.report'])
 
 const short = (v) => {
   const s = typeof v === 'string' ? v : JSON.stringify(v)

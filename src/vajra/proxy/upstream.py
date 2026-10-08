@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -22,6 +24,9 @@ class Upstream:
     client: Client
     tools: dict[str, types.Tool] = field(default_factory=dict)
     resources: dict[str, types.Resource] = field(default_factory=dict)
+    fingerprints: dict[str, str] = field(default_factory=dict)
+    rejected: dict[str, str] = field(default_factory=dict)
+    """Tools dropped at connect time, with the reason (e.g. pin mismatch)."""
 
     @property
     def name(self) -> str:
@@ -60,6 +65,14 @@ class UpstreamManager:
         upstream = Upstream(cfg, client)
 
         for tool in await _list_all_tools(client):
+            fp = tool_fingerprint(tool)
+            upstream.fingerprints[tool.name] = fp
+            pin = cfg.tool(tool.name).pin
+            if pin is not None and pin != fp:
+                reason = f"definition changed (pinned {pin}, got {fp})"
+                upstream.rejected[tool.name] = reason
+                log.warning("REJECT tool=%s/%s %s", cfg.name, tool.name, reason)
+                continue
             upstream.tools[tool.name] = tool
         if client.server_capabilities.resources is not None:
             for res in await _list_all_resources(client):
@@ -82,6 +95,16 @@ class UpstreamManager:
             return self.upstreams[self._resource_routes[uri]]
         except KeyError:
             raise UnknownRouteError(f"unknown resource {uri!r}") from None
+
+
+def tool_fingerprint(tool: types.Tool) -> str:
+    """Stable hash of everything the planner reads about a tool: its name, description and input schema."""
+    canonical = json.dumps(
+        {"name": tool.name, "description": tool.description or "", "input_schema": tool.input_schema},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
 
 def exposed_tool_name(upstream: str, tool: str) -> str:

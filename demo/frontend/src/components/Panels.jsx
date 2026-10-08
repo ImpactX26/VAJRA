@@ -28,6 +28,7 @@ export function FileViewer({ scenario }) {
   const files = scenario.file_contents
   const file = files[Math.min(tab, files.length - 1)]
   const isSecret = file.path.includes('secrets/')
+  const isSource = file.path.endsWith('SOURCE.md')
 
   // Bring the first injected line into view so the audience sees the payload immediately.
   useEffect(() => {
@@ -44,14 +45,27 @@ export function FileViewer({ scenario }) {
           </button>
         ))}
       </div>
-      <div className={`file-banner ${isSecret ? 'secret' : 'poison'}`}>
-        {isSecret
+      <div className={`file-banner ${isSource ? 'source' : isSecret ? 'secret' : 'poison'}`}>
+        {isSource
+          ? 'Provenance: where this payload comes from (not written by us)'
+          : isSecret
           ? 'Target of exfiltration: fake credentials the attacker wants'
           : 'Mock poisoned input. Highlighted lines are the prompt injection'}
       </div>
       <div ref={box} className="file-scroll">
         <Doc text={file.content} scenario={scenario} className="file-doc" />
       </div>
+    </div>
+  )
+}
+
+function SecurityNotice({ report }) {
+  if (!report) return null
+  const tone = report.blocked.length ? 'blocked' : report.withheld.length ? 'withheld' : 'clean'
+  return (
+    <div className={`notice ${tone}`}>
+      <h3>🛡️ VAJRA security notice (what the user is told)</h3>
+      <pre>{report.notice}</pre>
     </div>
   )
 }
@@ -63,7 +77,7 @@ function Outbox({ emails, scenario }) {
       <h3>📤 Outbox: what actually left the system</h3>
       {!emails.length && <p className="muted">No email was sent.</p>}
       {emails.map((m, i) => {
-        const attacker = m.to.trim().toLowerCase() !== 'alice@corp.example'
+        const attacker = m.to.trim().toLowerCase() !== scenario.user_email
         return (
           <div key={i} className={`email ${attacker ? 'attacker' : 'legit'}`}>
             <div className="email-head">
@@ -79,7 +93,7 @@ function Outbox({ emails, scenario }) {
   )
 }
 
-function Verdict({ events, phase, mode }) {
+function Verdict({ events, phase, mode, scenario }) {
   const verdict = events.find((e) => e.type === 'verdict')
   const error = events.find((e) => e.type === 'error')
   const blocks = events.filter((e) => e.type === 'proxy.block').length
@@ -97,7 +111,7 @@ function Verdict({ events, phase, mode }) {
     )
   }
   if (blocks) return <div className="verdict safe">🛡️ SAFE: VAJRA blocked {blocks} unsafe action{blocks > 1 ? 's' : ''}; nothing reached the attacker</div>
-  if (verdict.status === 'safe') return <div className="verdict safe">🛡️ SAFE: injection neutralised; only alice@corp.example received mail</div>
+  if (verdict.status === 'safe') return <div className="verdict safe">🛡️ SAFE: injection neutralised; only {scenario.user_email} received mail</div>
   return <div className="verdict idle">No email was sent (the model chose not to act).</div>
 }
 
@@ -121,7 +135,8 @@ export function RunPanel({ mode, run, scenario, onRun, disabled, providerLabel }
       </header>
       <p className="expect"><b>Expected:</b> {scenario.expectation[mode]}</p>
       <OrchestrationDiagram mode={mode} events={run.events} scenario={scenario} providerLabel={providerLabel} />
-      <Verdict events={run.events} phase={run.phase} mode={mode} />
+      <Verdict events={run.events} phase={run.phase} mode={mode} scenario={scenario} />
+      <SecurityNotice report={run.events.find((e) => e.type === 'vajra.report')} />
       <Timeline events={run.events} scenario={scenario} mode={mode} />
       <Outbox emails={outbox?.emails} scenario={scenario} />
     </section>

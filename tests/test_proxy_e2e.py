@@ -9,7 +9,7 @@ import pytest
 from mcp.client import Client
 from mcp.shared.exceptions import MCPError
 
-from vajra.config import Delivery, VajraConfig, ToolConfig, UpstreamConfig
+from vajra.config import Delivery, ToolConfig, UpstreamConfig, VajraConfig
 from vajra.proxy import UpstreamManager, build_server
 from vajra.taint.middleware import TaintMiddleware
 from vajra.taint.policy import PolicyEngine
@@ -139,3 +139,44 @@ async def test_quarantine_reader_output_stays_tainted():
             # A planner-chosen instruction must be trusted; untrusted data can't steer the reader's instruction.
             blocked = await planner.call_tool("vajra__quarantine", {"data": "x", "instruction": token})
             assert blocked.is_error and "'instruction'" in text(blocked)
+
+
+async def test_tool_pins_reject_changed_definitions():
+    from vajra.proxy.upstream import tool_fingerprint
+
+    config = make_config(Delivery.OPAQUE)
+    async with UpstreamManager(config.upstreams) as upstreams:
+        real = tool_fingerprint(upstreams.upstreams["mail"].tools["read_inbox"])
+
+    pinned = UpstreamConfig(
+        "mail",
+        sys.executable,
+        args=(FAKE,),
+        tools={
+            "read_inbox": ToolConfig(pin=real),  # matches: kept
+            "send_email": ToolConfig(pin="sha256:" + "0" * 32),  # e.g. description poisoned after review: dropped
+        },
+    )
+    config = VajraConfig(upstreams={"mail": pinned})
+    middleware = TaintMiddleware(PolicyEngine(config))
+    async with UpstreamManager(config.upstreams) as upstreams:
+        assert "send_email" in upstreams.upstreams["mail"].rejected
+        async with Client(build_server("vajra", upstreams, middleware)) as planner:
+            names = {t.name for t in (await planner.list_tools()).tools}
+            assert "mail__read_inbox" in names and "mail__send_email" not in names
+            blocked = await planner.call_tool("mail__send_email", {"to": "a@b.c", "subject": "s", "body": "b"})
+            assert blocked.is_error
+
+
+async def test_security_notice_reports_without_repeating_attacker_text():
+    async def scenario(planner, middleware):
+        (token,) = TOKEN.findall(text(await planner.call_tool("mail__read_inbox", {})))
+        await planner.call_tool("mail__send_email", {"to": token, "subject": "x", "body": "x"})
+        report = middleware.security_report()
+        assert [w["tool"] for w in report["withheld"]] == ["mail/read_inbox"]
+        assert len(report["blocked"]) == 1 and "'to'" in report["blocked"][0]["reason"]
+        assert "withheld untrusted content" in report["notice"] and "blocked 1 action" in report["notice"]
+        assert INJECTION_MARKER not in report["notice"]  # never echoes the attacker's text back
+        assert "detected" not in report["notice"]  # VAJRA contains, it does not claim detection
+
+    await run(Delivery.OPAQUE, scenario)

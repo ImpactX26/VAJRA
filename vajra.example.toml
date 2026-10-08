@@ -21,6 +21,9 @@ output = "untrusted"            # inbox contents are attacker-controlled
 # Untrusted data may flow into the body, but recipients/subject must come from the planner.
 untrusted_args = ["body"]
 description = "Send an email. 'to' and 'subject' must be written by you; 'body' may contain handle tokens."
+# Pin the reviewed tool definition. If the server later changes its description or schema
+# (tool poisoning / rug pull), VAJRA drops the tool. Generate pins with: python -m vajra --print-pins
+# pin = "sha256:..."
 
 [upstreams.calc]
 command = "python"

@@ -6,3 +6,4 @@ vajra.toml
 .env
 node_modules/
 demo/frontend/dist/
+docs/*.pdf

@@ -19,6 +19,8 @@ planner (MCP client) ──► VAJRA ──► upstream MCP servers
 - **Flow policy.** Untrusted data may only enter parameters listed in `untrusted_args`. For example, an email `body` may receive it, but never `to`.
 - **Context taint.** In `inline` mode the planner does see untrusted data, so the session context becomes untrusted. After that, only tools marked `allow_tainted_invocation` can be called, and resource reads are refused.
 - **Fail closed.** Unknown or forged handles reject the call. Upstream prompts are not proxied.
+- **Tool pinning.** Each upstream tool definition (name, description, schema) is fingerprinted. A pinned tool whose definition changes (tool poisoning, rug pull) is dropped before the planner sees it. `python -m vajra --print-pins` prints pins for your config.
+- **Security notice.** `TaintMiddleware.security_report()` gives the user a plain-language account of what was withheld and blocked. It never echoes attacker text and never claims "detection".
 
 ## Run
 
@@ -75,6 +77,18 @@ For frontend development with hot reload, run `npm run dev` in `demo/frontend` a
 | 1 | Poisoned invoice: fake "SYSTEM MESSAGE" in a file | API keys emailed to `audit@evil-exfil.example` | Planner sees only a handle; reader summarizes; only Alice gets mail |
 | 2 | Malicious web page: injection in a hidden `<div>` | API keys emailed to `keys@evil-exfil.example` | Page withheld; injection can't steer the planner |
 | 3 | Recipient hijack (BEC): no imperative, just a "new billing address" | Payment confirmation sent to attacker domain | `send_email.to` gets untrusted data and is **BLOCKED** by policy |
+| 4 | **AgentDojo benchmark payload** (not written by us): ETH Zurich's `important_instructions` attack in a feedback spreadsheet | Canary email sent to `mark.black-2134@gmail.com` | Withheld behind a handle; only the user gets mail |
+
+Scenario 4 is assembled from [AgentDojo](https://github.com/ethz-spylab/agentdojo) (NeurIPS 2024, MIT) at a pinned commit. See `demo/third_party/agentdojo/SOURCE.md`, and rebuild it with `python demo/third_party/agentdojo/build_feedback.py`.
+
+### Measured results
+
+```sh
+.venv/Scripts/python -m demo.eval                     # offline worst-case LLM
+.venv/Scripts/python -m demo.eval --provider groq     # live Groq model
+```
+
+Results are written to `docs/evaluation.md` (`--out NAME` to rename). Committed runs: `docs/evaluation_offline.md`, `docs/evaluation_groq.md`.
 
 Scenario 3 matters most for judges: a classifier sees nothing malicious in that text, but the information flow is still unsafe, and VAJRA blocks it deterministically.
 

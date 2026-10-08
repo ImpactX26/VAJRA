@@ -129,18 +129,18 @@ function persistentState(events, mode, scenario) {
     badges.mail = '🚨 data exfiltrated'
   } else if (verdict) {
     tones.mail = 'safe'
-    badges.mail = verdict.status === 'safe' ? '✓ only Alice' : 'nothing sent'
+    badges.mail = verdict.status === 'safe' ? `✓ only ${scenario.user_name.split(" ")[0]}` : 'nothing sent'
   }
   return { tones, badges }
 }
 
-function Node({ id, tone, badge, dim }) {
+function Node({ id, tone, badge, dim, sub }) {
   const n = NODES[id]
   return (
     <g className={`node ${tone ? `tone-${tone}` : ''} ${dim ? 'dim' : ''}`}>
       <rect x={n.x} y={n.y} width={n.w} height={n.h} rx="9" />
       <text x={n.x + n.w / 2} y={n.y + 20} className="node-label">{n.label}</text>
-      <text x={n.x + n.w / 2} y={n.y + 36} className="node-sub">{n.sub}</text>
+      <text x={n.x + n.w / 2} y={n.y + 36} className="node-sub">{sub ?? n.sub}</text>
       {badge && <text x={n.x + n.w / 2} y={n.y + n.h + 14} className={`node-badge ${tone ? `tone-${tone}` : ''}`}>{badge}</text>}
     </g>
   )
@@ -167,7 +167,7 @@ export function OrchestrationDiagram({ mode, events, scenario, providerLabel }) 
         const a = active[id]
         return <path key={id} d={d} className={`edge ${a ? `on tone-${a.tone} ${a.dir}` : ''}`} />
       })}
-      <Node id="user" tone={nodeTone('user')} />
+      <Node id="user" tone={nodeTone('user')} sub={scenario.user_name.split(" ")[0]} />
       <Node id="planner" tone={nodeTone('planner')} badge={badges.planner} />
       {P && ['store', 'policy', 'reader'].map((id) => <Node key={id} id={id} tone={nodeTone(id)} badge={badges[id]} />)}
       {SERVERS.map((id) => <Node key={id} id={id} tone={nodeTone(id)} badge={badges[id]} />)}
