@@ -37,3 +37,34 @@ def test_malformed_definitions_are_burned():
     assert verdict(tool(name="bad name!")) == "invalid tool name"
     assert "longer than" in verdict(tool(description="x" * 2000))
     assert verdict(tool(schema={"type": "string"})) == "input schema is not an object"
+
+
+from vajra.sandbox import sanitize_html  # noqa: E402
+
+
+def test_content_sandbox_keeps_visible_text_and_burns_hidden_parts():
+    html = (
+        "<h1>Guide</h1><p>Step one.</p>"
+        '<div style="display:none">secret note</div>'
+        '<span hidden>also hidden</span><p aria-hidden="true">aria</p>'
+        '<p style="font-size:1px">tiny</p><p style="opacity:0">clear</p>'
+        "<!-- a comment --><script>var x = 1</script><style>p{}</style>"
+        "<p>Step​ two.</p>"
+    )
+    text, burned = sanitize_html(html)
+    assert text == "Guide\nStep one.\nStep two."
+    kinds = [b.kind for b in burned]
+    assert kinds.count("element styled to be invisible") == 3
+    assert "element with the hidden attribute" in kinds and "element marked aria-hidden" in kinds
+    assert "HTML comment" in kinds and "<script> block" in kinds and "invisible characters" in kinds
+    assert all(word not in text for word in ("secret", "hidden", "aria", "tiny", "clear", "comment", "var x"))
+
+
+def test_content_sandbox_on_the_demo_page():
+    from pathlib import Path
+
+    html = (Path(__file__).parents[1] / "demo/mock_web/setup_guide.html").read_text(encoding="utf-8")
+    text, burned = sanitize_html(html)
+    assert "acmetools doctor" in text  # the real setup steps survive
+    assert len(burned) == 1 and burned[0].kind == "element styled to be invisible"
+    assert burned[0].preview and burned[0].preview not in text  # the hidden block is gone from what anyone downstream sees

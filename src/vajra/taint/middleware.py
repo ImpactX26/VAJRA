@@ -17,6 +17,7 @@ from typing import Any
 import mcp_types as types
 
 from ..config import Delivery
+from ..sandbox import sanitize_html
 from .labels import TRUSTED, Integrity, Label
 from .policy import PolicyEngine, PolicyViolation
 from .store import HANDLE_RE, TaintedValue, TaintStore, UnknownHandleError
@@ -47,6 +48,7 @@ class TaintMiddleware:
         """Label of everything the planner has observed. Monotone: it only ever rises."""
         self.withheld: list[dict[str, Any]] = []
         self.blocked: list[dict[str, Any]] = []
+        self.burned: list[dict[str, Any]] = []
 
     async def call_tool(
         self, upstream: str, tool: str, arguments: dict[str, Any] | None, invoke: InvokeTool
@@ -79,6 +81,15 @@ class TaintMiddleware:
         result = await invoke(resolved)
         label = self.policy.tool_output_label(upstream, tool, call_id, arg_labels, self.context)
         rendered = _render_content(result.content)
+        if self.policy.sanitizer(upstream, tool) == "html":
+            rendered, burned = sanitize_html(rendered)
+            # The cleaned text replaces the raw output everywhere downstream (labels, handles, reader).
+            result = types.CallToolResult(content=[types.TextContent(text=rendered)], is_error=result.is_error)
+            for b in burned:
+                self.burned.append({"tool": qualified, "kind": b.kind, "preview": b.preview})
+            audit.info("SANDBOX tool=%s call=%s burned=%d", qualified, call_id, len(burned))
+            self._emit("sanitize", tool=qualified, call_id=call_id, burned=[{"kind": b.kind, "preview": b.preview} for b in burned],
+                       kept_chars=len(rendered))
         self._emit(
             "label",
             tool=qualified,
@@ -138,7 +149,8 @@ class TaintMiddleware:
             "withheld": list(self.withheld),
             "blocked": list(self.blocked),
             "context_tainted": not self.context.trusted,
-            "notice": security_notice(self.withheld, self.blocked, not self.context.trusted),
+            "burned": list(self.burned),
+            "notice": security_notice(self.withheld, self.blocked, not self.context.trusted, self.burned),
         }
 
     def withholds(self, output: Integrity) -> bool:
@@ -156,10 +168,15 @@ class TaintMiddleware:
             self.on_event({"type": f"proxy.{kind}", **fields})
 
 
-def security_notice(withheld: list[dict[str, Any]], blocked: list[dict[str, Any]], context_tainted: bool) -> str:
+def security_notice(
+    withheld: list[dict[str, Any]], blocked: list[dict[str, Any]], context_tainted: bool, burned: list[dict[str, Any]] | None = None
+) -> str:
     """Plain-language summary for the user. It states what was withheld and blocked. It never claims an
     injection was "detected": VAJRA does not inspect content, it contains it."""
     lines: list[str] = []
+    if burned:
+        lines.append(f"VAJRA's sandbox burned {len(burned)} hidden part(s) of the content (things a person could not see):")
+        lines.extend(f"  - {b['tool']}: {b['kind']}" for b in burned)
     external = [w for w in withheld if w["external"]]
     derived = len(withheld) - len(external)
     if external:

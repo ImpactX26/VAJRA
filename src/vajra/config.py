@@ -38,6 +38,9 @@ class ToolConfig:
     description: str | None = None
     """Operator-written description replacing the upstream's (which is itself untrusted text)."""
     hidden: bool = False
+    sanitize: str | None = None
+    """Content sandbox for this tool's output. ``"html"`` burns everything a person would not see on the page
+    (hidden elements, comments, scripts, invisible characters) before anything else handles it."""
     pin: str | None = None
     """Expected fingerprint of the tool definition (see ``vajra --print-pins``). A mismatch, from a
     poisoned description or a silently changed schema ("rug pull"), drops the tool before the planner sees it."""
@@ -106,5 +109,6 @@ def _parse_tool(body: dict[str, Any]) -> ToolConfig:
         allow_tainted_invocation=bool(body.get("allow_tainted_invocation", False)),
         description=body.get("description"),
         hidden=bool(body.get("hidden", False)),
+        sanitize=body.get("sanitize"),
         pin=body.get("pin"),
     )

@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import urllib.parse
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -47,6 +49,14 @@ def web_server() -> MCPServer:
     @app.tool()
     def fetch_url(url: str) -> str:
         """Fetch a web page and return its raw HTML."""
+        # Real HTTP for the local demo site; the fixed attack-2 URL keeps its offline copy.
+        host = urllib.parse.urlparse(url).hostname
+        if host in ("127.0.0.1", "localhost"):
+            try:
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    return resp.read().decode("utf-8", errors="replace")
+            except OSError as e:
+                return f"error: could not fetch {url} ({e})"
         name = pages.get(url.rstrip("/"))
         return (WEB / name).read_text(encoding="utf-8") if name else f"error: 404 for {url}"
 

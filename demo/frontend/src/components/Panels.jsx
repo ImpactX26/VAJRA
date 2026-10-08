@@ -90,6 +90,33 @@ export function FileViewer({ scenario }) {
   )
 }
 
+function Burned({ events }) {
+  const burned = events.filter((e) => e.type === 'proxy.sanitize').flatMap((e) => e.burned)
+  if (!burned.length) return null
+  return (
+    <div className="burned-box">
+      <h3>🔥 Burned in the sandbox</h3>
+      {burned.map((b, i) => (
+        <div key={i} className="burned-item">
+          <b>{b.kind}</b>
+          {b.preview && <code>{b.preview}</code>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Delivered({ event }) {
+  if (!event) return null
+  return (
+    <div className="delivered-box">
+      <h3>📬 Delivered to you</h3>
+      <pre>{event.text}</pre>
+      <small className="muted">Shown to you by VAJRA. The AI planner only ever held a sealed reference to this text.</small>
+    </div>
+  )
+}
+
 function SecurityNotice({ report }) {
   if (!report) return null
   const tone = report.blocked.length ? 'blocked' : report.withheld.length ? 'withheld' : 'clean'
@@ -141,6 +168,9 @@ function Verdict({ events, phase, mode, scenario }) {
       </div>
     )
   }
+  if (events.some((e) => e.type === 'vajra.deliver')) {
+    return <div className="verdict safe">🛡️ Safe: hidden content burned, and a clean answer delivered to the user.</div>
+  }
   if (blocks) return <div className="verdict safe">🛡️ Attack stopped: VAJRA blocked {blocks} unsafe action{blocks > 1 ? 's' : ''}. Nothing reached the attacker.</div>
   if (verdict.status === 'safe') return <div className="verdict safe">🛡️ Attack stopped: only {scenario.user_name} received an email.</div>
   return <div className="verdict idle">No email was sent.</div>
@@ -166,6 +196,8 @@ export function RunPanel({ mode, run, scenario, onRun, disabled, providerLabel }
       <h3 className="what-happened">What happened</h3>
       <Summary events={run.events} mode={mode} scenario={scenario} />
       {run.phase === 'idle' && <p className="muted">Press Run (or “Run both” above) to see each step here.</p>}
+      <Burned events={run.events} />
+      <Delivered event={run.events.find((e) => e.type === 'vajra.deliver')} />
       <SecurityNotice report={run.events.find((e) => e.type === 'vajra.report')} />
       <Outbox emails={outbox?.emails} scenario={scenario} />
       <details className="tech">

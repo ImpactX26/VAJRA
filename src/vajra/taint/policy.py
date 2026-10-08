@@ -44,6 +44,10 @@ class PolicyEngine:
                     "this parameter only accepts trusted data"
                 )
 
+    def sanitizer(self, upstream: str, tool: str) -> str | None:
+        """Which content sandbox (if any) this tool's output goes through."""
+        return self._config.upstreams[upstream].tool(tool).sanitize
+
     def output_integrity(self, upstream: str, tool: str) -> Integrity:
         """The configured integrity of a tool's own output, before joining in its inputs."""
         return self._config.upstreams[upstream].tool_output(tool)

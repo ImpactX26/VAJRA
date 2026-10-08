@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { InjectionsPage } from './components/InjectionsPage.jsx'
+import { LiveFetchPage } from './components/LiveFetchPage.jsx'
 import { FileViewer, RunPanel, SourceEvidence } from './components/Panels.jsx'
 import { SandboxPage } from './components/SandboxPage.jsx'
 import { LAYERS } from './injectionGuide.js'
@@ -11,6 +12,7 @@ const SPEEDS = { Slow: 1400, Normal: 750, Fast: 250 }
 const NAV = [
   ['home', 'Home', href.home],
   ['attacks', 'Attacks', href.attacks],
+  ['live', 'Live fetch', '#/live'],
   ['sandbox', 'Sandbox', '#/sandbox'],
   ['how', 'How it works', href.how],
   ['anatomy', 'Attack anatomy', href.anatomy()],
@@ -63,13 +65,13 @@ export default function App() {
       .catch(() => setLoadError('Cannot reach the demo backend. Start it with: python -m demo.backend'))
   }, [])
 
-  // A new demo page starts clean.
+  // Every page starts with clean runs.
   const demoId = route.page === 'demo' ? route.id : null
   useEffect(() => {
     unprotected.reset()
     protectedRun.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demoId])
+  }, [route.page, route.id])
 
   // ?autorun=<id>&provider=…&speed=… : open that demo and run it hands-free.
   const [autorun] = useState(() => new URLSearchParams(window.location.search))
@@ -99,10 +101,31 @@ export default function App() {
   if (loadError) return <div className="fatal">{loadError}</div>
   if (!scenarios.length) return <div className="fatal muted">Loading…</div>
 
+  const controls = (
+    <>
+      <div className="seg">
+        <button className={provider === 'groq' ? 'on' : ''} disabled={busy || !status?.groq_available} onClick={() => setProvider('groq')}>
+          🌐 Live AI
+        </button>
+        <button className={provider === 'scripted' ? 'on' : ''} disabled={busy} onClick={() => setProvider('scripted')}>
+          💻 Offline AI
+        </button>
+      </div>
+      <div className="seg">
+        {Object.keys(SPEEDS).map((s) => (
+          <button key={s} className={speed === s ? 'on' : ''} onClick={() => setSpeed(s)}>{s}</button>
+        ))}
+      </div>
+    </>
+  )
   const active = route.page === 'demo' ? 'attacks' : route.page
   let body
   if (route.page === 'attacks') body = <AttacksPage scenarios={scenarios} />
   else if (route.page === 'sandbox') body = <SandboxPage />
+  else if (route.page === 'live') {
+    body = <LiveFetchPage scenarios={scenarios} unprotected={unprotected} protectedRun={protectedRun}
+      provider={provider} providerLabel={providerLabel} controls={controls} />
+  }
   else if (route.page === 'how') body = <HowPage />
   else if (route.page === 'anatomy') body = <InjectionsPage scenarios={scenarios} currentId={route.id} />
   else if (route.page === 'results') body = <ResultsPage />

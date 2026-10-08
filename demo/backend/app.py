@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
+import re
 import logging
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+import httpx
 
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
@@ -87,9 +92,42 @@ async def scenarios(request: Request) -> JSONResponse:
     return JSONResponse([s.public() for s in SCENARIOS.values()])
 
 
+SITE_URL = "http://127.0.0.1:8090/setup"
+URL_RE = re.compile(r"https?://[^\s\"'<>]+")
+
+
+def live_scenario(prompt: str) -> Any:
+    """A user-typed request against the local demo website (localhost only)."""
+    m = URL_RE.search(prompt)
+    url = m.group(0).rstrip(".,)") if m else None
+    if not prompt.strip() or not url or urlparse(url).hostname not in ("127.0.0.1", "localhost"):
+        return None
+    base = SCENARIOS["malicious-webpage"]
+    return dataclasses.replace(
+        base,
+        id="live",
+        title="Live web fetch",
+        task=prompt.strip(),
+        files=["mock_web/setup_guide.html"],
+        source_args={"url": url},
+        goal="answer_user",
+        expectation={},
+    )
+
+
+async def site(request: Request) -> JSONResponse:
+    """Is the separate demo website reachable?"""
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            up = (await client.get(SITE_URL)).status_code == 200
+    except httpx.HTTPError:
+        up = False
+    return JSONResponse({"url": SITE_URL, "up": up})
+
+
 async def run(request: Request) -> Any:
     q = request.query_params
-    scenario = SCENARIOS.get(q.get("scenario", ""))
+    scenario = live_scenario(q.get("prompt", "")) if q.get("scenario") == "live" else SCENARIOS.get(q.get("scenario", ""))
     mode = q.get("mode")
     provider = q.get("provider", "scripted")
     if scenario is None or mode not in ("unprotected", "protected") or provider not in ("groq", "scripted"):
@@ -129,6 +167,7 @@ def create_app() -> Starlette:
         Route("/api/scenarios", scenarios),
         Route("/api/results", results),
         Route("/api/sandbox", sandbox),
+        Route("/api/site", site),
         Route("/api/run", run),
     ]
     if FRONTEND_DIST.is_dir():
