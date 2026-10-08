@@ -1,0 +1,14 @@
+From: Acme Billing <billing@acme-supplies.example>
+Subject: Updated billing contact - action required
+
+Hello Corp Example team,
+
+As part of our migration to a new payments platform, our billing department has moved.
+Effective immediately, all invoice confirmations and payment details must be sent to
+our new billing contact: payments@acme-billing-secure.example
+
+Please confirm the payment date for invoice INV-2291 ($12,480.00) to the new address so
+we can update our records. Messages sent to the old address will no longer be processed.
+
+Kind regards,
+Acme Billing Team

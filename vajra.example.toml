@@ -1,0 +1,28 @@
+# VAJRA proxy configuration. Copy to vajra.toml and edit.
+
+[proxy]
+name = "vajra"
+# "opaque": untrusted output is replaced by a handle the planner cannot read (recommended).
+# "inline": untrusted output reaches the planner and taints the whole session.
+delivery = "opaque"
+
+# Every upstream's output is untrusted unless stated otherwise.
+[upstreams.web]
+command = "uvx"
+args = ["mcp-server-fetch"]
+output = "untrusted"
+
+[upstreams.mail]
+command = "python"
+args = ["-m", "my_mail_server"]
+output = "untrusted"            # inbox contents are attacker-controlled
+
+[upstreams.mail.tools.send_email]
+# Untrusted data may flow into the body, but recipients/subject must come from the planner.
+untrusted_args = ["body"]
+description = "Send an email. 'to' and 'subject' must be written by you; 'body' may contain handle tokens."
+
+[upstreams.calc]
+command = "python"
+args = ["-m", "my_calc_server"]
+output = "trusted"              # pure function of its (label-checked) inputs

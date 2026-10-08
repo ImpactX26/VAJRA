@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vajra-mcp"
+version = "0.1.0"
+description = "Zero-trust MCP proxy that counters prompt injection architecturally (taint tracking, capability tokens, dual-LLM quarantine)."
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.3,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+vajra = "vajra.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vajra"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["src"]
