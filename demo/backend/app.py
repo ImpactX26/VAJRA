@@ -248,6 +248,17 @@ async def audit_stream(request: Request) -> Any:
     return EventSourceResponse(events())
 
 
+async def selftest(request: Request) -> JSONResponse:
+    """Run one deterministic check per threat against the live policy, and audit the outcome."""
+    from .selftest import run_selftest
+
+    report = await run_selftest()
+    passed = sum(c["ok"] for t in report["threats"] for c in t["checks"])
+    total = sum(len(t["checks"]) for t in report["threats"])
+    TRAIL.record("selftest", ok=report["ok"], passed=passed, total=total)
+    return JSONResponse(report)
+
+
 async def monitor_status(request: Request) -> JSONResponse:
     return JSONResponse(SCANNER.status())
 
@@ -290,6 +301,7 @@ def create_app() -> Starlette:
         Route("/api/audit/stats", audit_stats),
         Route("/api/audit/export", audit_export),
         Route("/api/audit/stream", audit_stream),
+        Route("/api/selftest", selftest),
         Route("/api/monitor/status", monitor_status),
         Route("/api/monitor/scan", monitor_scan, methods=["POST"]),
         Route("/api/monitor/config", monitor_config, methods=["POST"]),

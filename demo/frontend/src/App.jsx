@@ -5,6 +5,7 @@ import { LiveFetchPage } from './components/LiveFetchPage.jsx'
 import { MonitorPage } from './components/MonitorPage.jsx'
 import { FileViewer, RunPanel, SourceEvidence } from './components/Panels.jsx'
 import { SandboxPage } from './components/SandboxPage.jsx'
+import { ThreatsPage } from './components/ThreatsPage.jsx'
 import { AttacksPage, HomePage, HowPage, ResultsPage } from './pages.jsx'
 import { href, useRoute } from './router.js'
 import { useRun } from './useRun.js'
@@ -13,6 +14,7 @@ const SPEEDS = { Slow: 1400, Normal: 750, Fast: 250 }
 const NAV = [
   ['home', 'Overview', href.home],
   ['attacks', 'Attacks', href.attacks],
+  ['threats', 'Threats', '#/threats'],
   ['live', 'Live fetch', '#/live'],
   ['sandbox', 'Sandbox', '#/sandbox'],
   ['monitor', 'Monitor', '#/monitor'],
@@ -135,6 +137,7 @@ export default function App() {
   if (route.page === 'attacks') body = <AttacksPage scenarios={scenarios} />
   else if (route.page === 'sandbox') body = <SandboxPage />
   else if (route.page === 'monitor') body = <MonitorPage />
+  else if (route.page === 'threats') body = <ThreatsPage />
   else if (route.page === 'live') {
     body = <LiveFetchPage scenarios={scenarios} unprotected={unprotected} protectedRun={protectedRun}
       provider={provider} providerLabel={providerLabel} controls={controls} />

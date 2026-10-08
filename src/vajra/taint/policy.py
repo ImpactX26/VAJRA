@@ -13,6 +13,7 @@ Capability tokens (see ``vajra.capabilities``) will layer on top of this.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 from ..config import VajraConfig
@@ -43,6 +44,34 @@ class PolicyEngine:
                     f"{qualified}: argument {arg!r} carries {effective.describe()} data; "
                     "this parameter only accepts trusted data"
                 )
+            # Lateral movement: untrusted data may only cross from servers this argument accepts.
+            allowed = cfg.accepts_from.get(arg)
+            if allowed is not None and not effective.trusted:
+                foreign = sorted(effective.upstreams - allowed - {"vajra"})
+                if foreign:
+                    raise PolicyViolation(
+                        f"{qualified}: argument {arg!r} carries data from {', '.join(foreign)}; "
+                        f"this parameter only accepts outside data from {', '.join(sorted(allowed)) or 'no server'}"
+                    )
+            # Exfiltration: secret data never enters a tool that sends data out.
+            if cfg.egress and effective.secret:
+                raise PolicyViolation(
+                    f"{qualified}: argument {arg!r} carries secret data; {qualified} sends data outside, "
+                    "so secret data may not flow into it"
+                )
+
+    def check_values(self, upstream: str, tool: str, resolved: Mapping[str, object]) -> None:
+        """Argument grammar: every constrained argument must fully match its pattern after handles are
+        resolved, so downstream shells, queries and APIs only ever receive the expected shape."""
+        cfg = self._config.upstreams[upstream].tool(tool)
+        for arg, pattern in cfg.arg_patterns.items():
+            if arg not in resolved:
+                continue
+            value = resolved[arg]
+            if not isinstance(value, str) or re.fullmatch(pattern, value) is None:
+                raise PolicyViolation(
+                    f"{upstream}/{tool}: argument {arg!r} does not match its allowed format"
+                )
 
     def sanitizer(self, upstream: str, tool: str) -> str | None:
         """Which content sandbox (if any) this tool's output goes through."""
@@ -53,11 +82,22 @@ class PolicyEngine:
         return self._config.upstreams[upstream].tool_output(tool)
 
     def tool_output_label(
-        self, upstream: str, tool: str, call_id: str, arg_labels: Mapping[str, Label], context: Label
+        self,
+        upstream: str,
+        tool: str,
+        call_id: str,
+        arg_labels: Mapping[str, Label],
+        context: Label,
+        resolved: Mapping[str, object] | None = None,
     ) -> Label:
-        """Output integrity is the join of the tool's own trust and everything that influenced the call."""
+        """Output label = the tool's own trust and secrecy, joined with everything that influenced the call."""
+        cfg = self._config.upstreams[upstream].tool(tool)
         integrity = self._config.upstreams[upstream].tool_output(tool)
-        base = Label(integrity, frozenset({Source(upstream, "tool", tool, call_id)}))
+        secret = any(
+            isinstance((resolved or {}).get(arg), str) and re.search(pattern, resolved[arg]) is not None
+            for arg, pattern in cfg.secret_when.items()
+        )
+        base = Label(integrity, frozenset({Source(upstream, "tool", tool, call_id)}), secret)
         return join_all([base, context, *arg_labels.values()])
 
     def check_resource_read(self, upstream: str, uri: str, context: Label) -> None:

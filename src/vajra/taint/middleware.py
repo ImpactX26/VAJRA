@@ -71,6 +71,7 @@ class TaintMiddleware:
                 context=self.context.integrity.name.lower(),
             )
             self.policy.check_call(upstream, tool, arg_labels, self.context)
+            self.policy.check_values(upstream, tool, resolved)
         except (PolicyViolation, UnknownHandleError) as e:
             audit.warning("BLOCK tool=%s reason=%s", qualified, e)
             self._emit("block", tool=qualified, reason=str(e))
@@ -88,7 +89,7 @@ class TaintMiddleware:
         self._emit("allow", tool=qualified, call_id=call_id, resolved_arguments=resolved)
         self._audit("call", tool=qualified, call_id=call_id, arg_labels=_labels(arg_labels))
         result = await invoke(resolved)
-        label = self.policy.tool_output_label(upstream, tool, call_id, arg_labels, self.context)
+        label = self.policy.tool_output_label(upstream, tool, call_id, arg_labels, self.context, resolved)
         rendered = _render_content(result.content)
         if self.policy.sanitizer(upstream, tool) == "html":
             rendered, burned = sanitize_html(rendered)
@@ -113,6 +114,10 @@ class TaintMiddleware:
         )
 
         if label.trusted:
+            if label.secret and not self.context.secret:
+                # The planner is about to read secret data: anything it writes from now on may contain it.
+                self.context = self.context | Label(Integrity.TRUSTED, frozenset(), True)
+                self._audit("context_secret", tool=qualified, call_id=call_id)
             self._emit("pass", tool=qualified, call_id=call_id)
             return result
         if self.delivery is Delivery.INLINE:

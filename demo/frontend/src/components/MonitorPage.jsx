@@ -22,6 +22,8 @@ const KIND = {
   'monitor.drift': { label: 'Drift', tone: 'bad', group: 'monitor' },
   'monitor.vm': { label: 'VM state', tone: 'muted', group: 'monitor' },
   'monitor.error': { label: 'Monitor error', tone: 'warn', group: 'monitor' },
+  selftest: { label: 'Self-test', tone: 'info', group: 'monitor' },
+  context_secret: { label: 'Secret read', tone: 'violet', group: 'withheld' },
 }
 const FILTERS = [
   ['all', 'All'], ['calls', 'Calls'], ['blocks', 'Blocks'], ['withheld', 'Sealed'], ['removed', 'Removed'],
@@ -38,6 +40,7 @@ function details(r) {
   switch (r.kind) {
     case 'call': return r.arg_labels ? Object.entries(r.arg_labels).map(([k, v]) => `${k}: ${v}`).join(', ') || 'no arguments' : ''
     case 'block': return r.reason
+    case 'selftest': return `${r.passed} of ${r.total} threat checks passed`
     case 'withhold': return `${r.chars} chars sealed as ${r.handle?.slice(0, 10)}…`
     case 'sanitize': return `${(r.removed || []).length} hidden part(s) removed; ${r.kept_chars} chars kept`
     case 'tool.admit': return r.fingerprint

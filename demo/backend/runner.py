@@ -82,11 +82,17 @@ def upstream_configs(outbox: Path) -> dict[str, UpstreamConfig]:
         )
 
     return {
-        "files": cfg("files"),
+        # Anything read from secrets/ is labelled secret: it may never leave through an egress tool.
+        "files": cfg("files", tools={"read_file": ToolConfig(secret_when={"path": r"(^|/)secrets/"})}),
         # Web pages go through the content sandbox: whatever a person would not see is burned.
         "web": cfg("web", tools={"fetch_url": ToolConfig(sanitize="html")}),
         # Untrusted data may become an email body, never a recipient or subject.
-        "mail": cfg("mail", tools={"send_email": ToolConfig(untrusted_args=frozenset({"body"}))}),
+        # send_email sends data outside: no secret data, recipients only in the organisation's domains.
+        "mail": cfg("mail", tools={"send_email": ToolConfig(
+            untrusted_args=frozenset({"body"}),
+            egress=True,
+            arg_patterns={"to": r"[A-Za-z0-9._%+-]+@(corp\.example|bluesparrowtech\.com)"},
+        )}),
     }
 
 

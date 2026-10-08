@@ -44,20 +44,27 @@ class Source:
 class Label:
     integrity: Integrity
     sources: frozenset[Source] = frozenset()
+    secret: bool = False
+    """Confidentiality: set when any input came from a source the operator marked secret. Joins with OR,
+    so secrecy, like taint, can only spread."""
 
     @property
     def trusted(self) -> bool:
         return self.integrity is Integrity.TRUSTED
 
+    @property
+    def upstreams(self) -> frozenset[str]:
+        return frozenset(s.upstream for s in self.sources)
+
     def join(self, other: Label) -> Label:
-        return Label(max(self.integrity, other.integrity), self.sources | other.sources)
+        return Label(max(self.integrity, other.integrity), self.sources | other.sources, self.secret or other.secret)
 
     def __or__(self, other: Label) -> Label:
         return self.join(other)
 
     def describe(self) -> str:
         srcs = ", ".join(sorted(str(s) for s in self.sources)) or "-"
-        return f"{self.integrity.name.lower()} [{srcs}]"
+        return f"{self.integrity.name.lower()}{', secret' if self.secret else ''} [{srcs}]"
 
 
 TRUSTED = Label(Integrity.TRUSTED)

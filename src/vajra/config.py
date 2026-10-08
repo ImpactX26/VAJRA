@@ -40,6 +40,17 @@ class ToolConfig:
     description: str | None = None
     """Operator-written description replacing the upstream's (which is itself untrusted text)."""
     hidden: bool = False
+    egress: bool = False
+    """The tool sends data outside the organisation (email, HTTP post, upload). Secret data may never enter it."""
+    accepts_from: dict[str, frozenset[str]] = field(default_factory=dict)
+    """Per argument in ``untrusted_args``: which upstream servers' untrusted data may flow in. Missing = any.
+    Stops lateral movement, e.g. web content reaching a file-system or database tool."""
+    arg_patterns: dict[str, str] = field(default_factory=dict)
+    """Per argument: a regular expression the *resolved* value must fully match (argument grammar).
+    Applied before the call reaches the tool, so downstream shells/queries only receive the expected shape."""
+    secret_when: dict[str, str] = field(default_factory=dict)
+    """Per argument: if the value matches this pattern, the tool's output is labelled secret
+    (e.g. read_file with path matching ^secrets/)."""
     sanitize: str | None = None
     """Content sandbox for this tool's output. ``"html"`` burns everything a person would not see on the page
     (hidden elements, comments, scripts, invisible characters) before anything else handles it."""
@@ -118,6 +129,10 @@ def _parse_tool(body: dict[str, Any]) -> ToolConfig:
         allow_tainted_invocation=bool(body.get("allow_tainted_invocation", False)),
         description=body.get("description"),
         hidden=bool(body.get("hidden", False)),
+        egress=bool(body.get("egress", False)),
+        accepts_from={k: frozenset(v) for k, v in body.get("accepts_from", {}).items()},
+        arg_patterns=dict(body.get("arg_patterns", {})),
+        secret_when=dict(body.get("secret_when", {})),
         sanitize=body.get("sanitize"),
         pin=body.get("pin"),
     )
