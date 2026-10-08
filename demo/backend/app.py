@@ -274,6 +274,21 @@ async def convert_run(request: Request) -> JSONResponse:
     return JSONResponse(await convert(uploads, engine, how, operation))
 
 
+async def guard_check(request: Request) -> JSONResponse:
+    """Download Guard (browser extension): check one file before it reaches the user's disk."""
+    from urllib.parse import urlparse as _up
+
+    from .convert import MAX_UPLOAD, guard
+
+    form = await request.form(max_files=1)
+    f = form.get("file")
+    if not hasattr(f, "read"):
+        return JSONResponse({"error": "send one file"}, status_code=400)
+    data = await f.read(MAX_UPLOAD + 1)
+    source = _up(str(form.get("url", ""))).hostname or "unknown"  # host only: full URLs may carry tokens
+    return JSONResponse(await guard(f.filename or "download", data, source))
+
+
 async def convert_file(request: Request) -> Response:
     from .convert import delivered_file
 
@@ -282,7 +297,8 @@ async def convert_file(request: Request) -> Response:
         return JSONResponse({"error": "file not found or expired"}, status_code=404)
     path, name = found
     TRAIL.record("file.download", file=name)
-    return FileResponse(path, media_type="application/pdf", filename=name)
+    media = {".png": "image/png", ".jpg": "image/jpeg"}.get(Path(name).suffix.lower(), "application/pdf")
+    return FileResponse(path, media_type=media, filename=name)
 
 
 async def selftest(request: Request) -> JSONResponse:
@@ -343,6 +359,7 @@ def create_app() -> Starlette:
         Route("/api/convert/status", convert_status),
         Route("/api/convert", convert_run, methods=["POST"]),
         Route("/api/convert/file/{token}", convert_file),
+        Route("/api/guard/check", guard_check, methods=["POST"]),
         Route("/api/monitor/status", monitor_status),
         Route("/api/monitor/scan", monitor_scan, methods=["POST"]),
         Route("/api/monitor/config", monitor_config, methods=["POST"]),

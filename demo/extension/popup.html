@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>VAJRA Download Guard</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <img src="icons/icon48.png" alt="" width="30" height="30" />
+    <div class="brand">
+      <strong>VAJRA</strong>
+      <span>Download Guard</span>
+    </div>
+    <label class="switch" title="Check every PDF and image download">
+      <input type="checkbox" id="enabled" />
+      <span class="track"><span class="knob"></span></span>
+    </label>
+  </header>
+
+  <section class="status" id="status">
+    <div class="row" id="st-server"><span class="dot"></span><span class="label">VAJRA server</span><span class="value">checking</span></div>
+    <div class="row" id="st-test"><span class="dot"></span><span class="label">Threat self-test</span><span class="value">checking</span></div>
+    <div class="row" id="st-pdf"><span class="dot"></span><span class="label">iLovePDF</span><span class="value">checking</span></div>
+  </section>
+
+  <section class="counts">
+    <div><b id="c-checked">0</b><span>checked</span></div>
+    <div class="ok"><b id="c-delivered">0</b><span>delivered</span></div>
+    <div class="bad"><b id="c-burned">0</b><span>burned</span></div>
+    <div class="warn"><b id="c-blocked">0</b><span>blocked</span></div>
+  </section>
+
+  <section>
+    <h2>Recent files</h2>
+    <ul id="history"><li class="empty">No downloads checked yet. Download a PDF or image to see VAJRA at work.</li></ul>
+  </section>
+
+  <footer>
+    <a href="#" id="open-monitor">Audit trail</a>
+    <a href="#" id="open-samples">Test downloads</a>
+    <a href="#" id="clear">Clear</a>
+  </footer>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
