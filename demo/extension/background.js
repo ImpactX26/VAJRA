@@ -63,10 +63,7 @@ export async function checkUrl(url, hintName) {
 
   let blob, name
   try {
-    const resp = await fetch(url, { credentials: 'include' })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    blob = await resp.blob()
-    name = hintName || nameFrom(url, resp.headers.get('content-disposition'))
+    ({ blob, name } = await fetchBytes(url, hintName))
   } catch (e) {
     notify('offline', 'Download blocked', `Could not fetch the file for checking (${e.message}).`)
     await remember({ name: hintName || url, source: host, verdict: 'blocked', reason: `fetch failed: ${e.message}` })
@@ -98,24 +95,63 @@ export async function checkUrl(url, hintName) {
   await remember({ name: report.filename || name, source: host, verdict: report.verdict, reason: report.reason })
 }
 
-// ------------------------------------------------------------------ intercept downloads
-chrome.downloads.onCreated.addListener(async (item) => {
-  if (item.byExtensionId === chrome.runtime.id) return
-  const url = item.finalUrl || item.url
-  if (url.startsWith(VAJRA) || url.startsWith('blob:') || url.startsWith('data:')) return
-  const guarded = GUARDED_MIME.test(item.mime || '') || GUARDED_EXT.test(url) || GUARDED_EXT.test(item.filename || '')
-  if (!guarded || !(await settings()).enabled) return
-
-  // Stop it before it lands. If it already finished (very small files), delete it from disk.
-  try { await chrome.downloads.cancel(item.id) } catch {}
-  const [now] = await chrome.downloads.search({ id: item.id })
-  if (now && now.state === 'complete' && now.exists) {
-    try { await chrome.downloads.removeFile(item.id) } catch {}
+// ------------------------------------------------------------------ getting the bytes again
+// Ordinary links are fetched again by the extension. Files a page generated itself (blob: URLs)
+// only exist inside that page, so they are read from the tab that created them.
+async function fetchBytes(url, hintName) {
+  if (url.startsWith('blob:')) {
+    const origin = new URL(url.slice(5)).origin
+    const tabs = await chrome.tabs.query({ url: `${origin}/*` })
+    for (const tab of tabs) {
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          args: [url],
+          func: async (u) => {
+            const b = await (await fetch(u)).blob()
+            const data = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b) })
+            return { type: b.type, data }
+          },
+        })
+        if (result && result.data) {
+          const bytes = Uint8Array.from(atob(result.data.split(',')[1] || ''), (c) => c.charCodeAt(0))
+          return { blob: new Blob([bytes], { type: result.type }), name: hintName || 'download' }
+        }
+      } catch {}
+    }
+    throw new Error('the page no longer holds this file')
   }
-  try { await chrome.downloads.erase({ id: item.id }) } catch {}
+  const resp = await fetch(url, { credentials: 'include' })
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return { blob: await resp.blob(), name: hintName || nameFrom(url, resp.headers.get('content-disposition')) }
+}
 
-  const hint = item.filename ? item.filename.split(/[\\/]/).pop() : undefined
-  await checkUrl(url, hint)
+// ------------------------------------------------------------------ intercept downloads
+// Decided when Chrome knows the real file name (from Content-Disposition) but before the file is
+// moved into place. Many sites serve files from links without an extension (ilovepdf.com does),
+// so a decision at download creation, when only the URL is known, would miss them.
+async function stop(id) {
+  try { await chrome.downloads.cancel(id) } catch {}
+  const [now] = await chrome.downloads.search({ id })
+  if (now && now.state === 'complete' && now.exists) {
+    try { await chrome.downloads.removeFile(id) } catch {}
+  }
+  try { await chrome.downloads.erase({ id }) } catch {}
+}
+
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  const url = item.finalUrl || item.url
+  const name = (item.filename || '').split(/[\\/]/).pop()
+  const guarded = item.byExtensionId !== chrome.runtime.id && !url.startsWith(VAJRA) &&
+    (GUARDED_MIME.test(item.mime || '') || GUARDED_EXT.test(name) || GUARDED_EXT.test(url))
+  if (!guarded) return void suggest()
+  settings().then(async ({ enabled }) => {
+    if (!enabled) return void suggest()
+    await stop(item.id)
+    try { suggest() } catch {}
+    await checkUrl(url, name || undefined)
+  })
+  return true // answered asynchronously
 })
 
 // ------------------------------------------------------------------ right-click menu
@@ -160,4 +196,41 @@ async function imageToPdf(url) {
   } catch (e) {
     notify('offline', 'Conversion failed', e.message)
   }
+}
+
+// ------------------------------------------------------------------ upload guard (from content.js)
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.type !== 'vajra-upload-check') return
+  checkUploads(msg).then((results) => reply({ results }))
+  return true // reply asynchronously
+})
+
+async function checkUploads({ host, files }) {
+  if (!(await settings()).enabled) return files.map((f) => ({ name: f.name, verdict: 'skipped' }))
+  const online = await vajraOnline()
+  const results = []
+  for (const f of files) {
+    if (f.skip) { results.push({ name: f.name, verdict: 'skipped' }); continue }
+    if (!online) {
+      results.push({ name: f.name, verdict: 'blocked', reason: 'VAJRA server offline' })
+      await remember({ name: f.name, source: host, dir: 'upload', verdict: 'blocked', reason: 'VAJRA server offline' })
+      continue
+    }
+    try {
+      const bytes = Uint8Array.from(atob(f.data.split(',')[1] || ''), (c) => c.charCodeAt(0))
+      const form = new FormData()
+      form.append('file', new Blob([bytes], { type: f.type }), f.name)
+      form.append('url', `https://${host}/`)
+      form.append('direction', 'upload')
+      const report = await (await fetch(`${VAJRA}/api/guard/check`, { method: 'POST', body: form })).json()
+      const verdict = report.verdict === 'skipped' ? 'skipped' : report.verdict
+      results.push({ name: f.name, verdict, reason: report.reason })
+      if (verdict !== 'skipped') await remember({ name: f.name, source: host, dir: 'upload', verdict, reason: report.reason })
+      if (verdict === 'burned') notify('burn', 'Burned before upload', `${f.name} was not sent to ${host}. ${report.reason}`)
+    } catch (e) {
+      results.push({ name: f.name, verdict: 'blocked', reason: 'check failed' })
+      await remember({ name: f.name, source: host, dir: 'upload', verdict: 'blocked', reason: 'check failed' })
+    }
+  }
+  return results
 }

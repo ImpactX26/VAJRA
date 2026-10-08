@@ -348,9 +348,10 @@ def guard_kind(name: str, data: bytes) -> str:
     return "other"
 
 
-async def guard(name: str, data: bytes, source: str) -> dict[str, Any]:
-    """Check one downloaded file in the jailed sandbox. Safe files are delivered (images rebuilt
-    from pixels first); unsafe files are burned. Other file types are not handled here."""
+async def guard(name: str, data: bytes, source: str, direction: str = "download") -> dict[str, Any]:
+    """Check one file in the jailed sandbox. Safe downloads are delivered (images rebuilt from pixels
+    first); unsafe files are burned. For uploads (direction="upload") only the verdict is returned:
+    the browser sends the user's own file on, or not at all. Other file types are not handled here."""
     cleanup_old()
     job = secrets.token_hex(6)
     folder = WORK / job
@@ -358,8 +359,8 @@ async def guard(name: str, data: bytes, source: str) -> dict[str, Any]:
     DELIVERED.mkdir(parents=True, exist_ok=True)
     kind = guard_kind(name, data)
     filename = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(name).name)[:80] or "download"
-    report: dict[str, Any] = {"job": job, "kind": kind, "name": filename, "source": source, "bytes": len(data)}
-    TRAIL.record("guard.receive", job=job, source=source, type=kind, bytes=len(data))
+    report: dict[str, Any] = {"job": job, "kind": kind, "name": filename, "source": source, "bytes": len(data), "direction": direction}
+    TRAIL.record("guard.receive", job=job, source=source, type=kind, bytes=len(data), direction=direction)
     try:
         if kind == "other":
             report.update(verdict="skipped", reason="not a PDF or image; VAJRA Download Guard only checks those")
@@ -376,11 +377,15 @@ async def guard(name: str, data: bytes, source: str) -> dict[str, Any]:
         failed = [c for c in scan.get("checks", []) if not c["ok"]]
         report.update(checks=scan.get("checks", []), removed=scan.get("removed", []), notes=scan.get("notes", []),
                       fingerprint=scan.get("fingerprint"))
-        TRAIL.record("file.check", job=job, file=f"download {kind}", safe=bool(scan.get("safe")),
+        TRAIL.record("file.check", job=job, file=f"{direction} {kind}", safe=bool(scan.get("safe")),
                      fingerprint=scan.get("fingerprint"), failed=[c["name"] for c in failed])
         if not scan.get("safe"):
-            TRAIL.record("file.burn", job=job, stage="guard", fingerprint=scan.get("fingerprint"), failed=[c["name"] for c in failed])
+            TRAIL.record("file.burn", job=job, stage=direction, fingerprint=scan.get("fingerprint"), failed=[c["name"] for c in failed])
             report.update(verdict="burned", reason="; ".join(f"{c['name']}: {c['detail']}" for c in failed))
+            return report
+        if direction == "upload":
+            TRAIL.record("file.allow", job=job, direction="upload", fingerprint=scan.get("fingerprint"), source=source)
+            report.update(verdict="delivered", reason="every check passed")
             return report
         token = secrets.token_hex(16)
         if kind == "image":

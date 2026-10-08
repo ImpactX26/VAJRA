@@ -54,7 +54,7 @@ async function loadHistory() {
     name.title = h.name
     const verdict = document.createElement('span')
     verdict.className = 'verdict'
-    verdict.textContent = h.verdict
+    verdict.textContent = h.dir === 'upload' ? (h.verdict === 'delivered' ? 'upload ok' : `upload ${h.verdict}`) : h.verdict
     top.append(name, verdict)
     const why = document.createElement('span')
     why.className = 'why'

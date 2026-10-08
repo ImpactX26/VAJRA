@@ -1,7 +1,11 @@
-# VAJRA Download Guard (browser extension)
+# VAJRA Guard (browser extension)
 
-Checks every PDF and image you download in VAJRA's sandbox before it reaches your disk.
-Safe files are saved (images rebuilt without hidden metadata). Unsafe files are burned and never saved.
+Checks PDFs and images in VAJRA's sandbox in both directions, on any website:
+
+- **Upload Guard:** files you pick or drag onto a website (for example ilovepdf.com) are checked
+  before the website receives them. Unsafe files are burned and never uploaded; a red notice appears on the page.
+- **Download Guard:** files you download are checked before they reach your disk. Safe files are saved
+  (images rebuilt without hidden metadata); unsafe files are burned and never saved.
 
 The extension is a front end: the checking happens in the VAJRA server running on this computer
 (`http://127.0.0.1:8001`). If the server is not running, guarded downloads are **blocked**, not let through.
@@ -14,7 +18,16 @@ The extension is a front end: the checking happens in the VAJRA server running o
 4. Click **Load unpacked** and choose this folder: `demo/extension`.
 5. Pin the VAJRA shield to the toolbar (puzzle-piece icon, then the pin).
 
-## Demo
+## Demo on the real iLovePDF website
+
+1. Open https://www.ilovepdf.com/merge_pdf
+2. Select `1_safe_invoice.pdf`, `2_safe_delivery_note.pdf` and `3_unsafe_contains_script.pdf` from `demo/convert_samples/merge-pdfs`.
+3. VAJRA burns the script PDF before upload (red notice, top right). iLovePDF only receives the two safe files.
+4. Click **Merge PDF**. The merged result is checked on download and saved as safe.
+
+The same works on https://www.ilovepdf.com/jpg_to_pdf with the files in `demo/convert_samples/image-to-pdf`.
+
+## Demo with the local download page
 
 1. Open `http://127.0.0.1:8090/downloads` (or click **Test downloads** in the extension popup).
 2. Click a `safe` file: a green "Safe: checked by VAJRA" notice appears and the file is saved.
@@ -30,5 +43,6 @@ Right-click menu:
 ## What it does not do
 
 - It does not run on Chrome for Android or iOS (mobile Chrome has no extensions).
-- Downloads created by a page script (`blob:` URLs) cannot be fetched again by the extension and are not checked.
+- Files a page generates itself (`blob:` downloads) are read back from that page; if the page has already discarded the file, the download is blocked.
+- If Chrome shows "This site is trying to download multiple files", allow it (or open each file in its own tab).
 - Only PDFs and images are checked; other file types download normally.

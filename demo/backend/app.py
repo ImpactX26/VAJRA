@@ -286,7 +286,8 @@ async def guard_check(request: Request) -> JSONResponse:
         return JSONResponse({"error": "send one file"}, status_code=400)
     data = await f.read(MAX_UPLOAD + 1)
     source = _up(str(form.get("url", ""))).hostname or "unknown"  # host only: full URLs may carry tokens
-    return JSONResponse(await guard(f.filename or "download", data, source))
+    direction = "upload" if form.get("direction") == "upload" else "download"
+    return JSONResponse(await guard(f.filename or "download", data, source, direction))
 
 
 async def convert_file(request: Request) -> Response:
