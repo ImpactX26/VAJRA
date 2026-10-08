@@ -207,6 +207,7 @@ async def convert(uploads: list[tuple[str, bytes]], engine: str, tamper_with: st
             pages_in = len(cleaned or [])
             if cleaned is None:
                 _burn_tree(folder)
+                step("burn", "Burned in the sandbox", True, "the unsafe image was never sent to the tool; overwritten and deleted")
                 return finish("burned", "the image itself failed the check, so it was never sent to the tool")
 
         # 3. Run the PDF tool, via VAJRA's MCP proxy -------------------------------
