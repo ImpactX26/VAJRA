@@ -33,7 +33,7 @@ def downloads_page() -> bytes:
     for p in _samples():
         safe = "_safe" in p.name
         rows.append(
-            f'<tr><td><a href="/files/{p.parent.name}/{p.name}">{p.name}</a></td>'
+            f'<tr><td><a href="/files/{p.parent.name}/{p.name}" target="_blank" rel="noopener">{p.name}</a></td>'
             f'<td>{p.parent.name}</td><td>{p.stat().st_size // 1024 or 1} KB</td>'
             f'<td class="{"ok" if safe else "bad"}">{"expected: delivered" if safe else "expected: burned"}</td></tr>'
         )
