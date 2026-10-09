@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HomeShowcase } from './components/HomeShowcase.jsx'
+import { CapabilityPlayground, GrammarPlayground } from './components/LayerPlaygrounds.jsx'
 import { Icon } from './components/Icon.jsx'
 import { LAYERS } from './injectionGuide.js'
 import { href } from './router.js'
@@ -81,39 +82,42 @@ export function AttacksPage({ scenarios }) {
   )
 }
 
-export function HowPage() {
-  const built = LAYERS.filter((l) => !l.planned)
-  const [open, setOpen] = useState(built[0].id)
+export function HowPage({ initial }) {
+  const [open, setOpen] = useState(LAYERS.some((l) => l.id === initial) ? initial : LAYERS[0].id)
   return (
     <div className="page">
-      <PageHeader eyebrow="Architecture" title="How it works" lead="Every tool result passes through these layers, in this order. Select a layer for details." />
+      <PageHeader eyebrow="Architecture" title="How it works" lead="Every tool call and result passes through these layers, in this order. Select a layer for details. The two newest layers can be tried live." />
       <div className="how-layout">
         <ol className="how-rail">
-          {built.map((l, i) => (
+          {LAYERS.map((l, i) => (
             <li key={l.id}>
               <button className={`how-item ${open === l.id ? 'on' : ''}`} onClick={() => setOpen(l.id)}>
                 <span className="how-num">{i + 1}</span>
                 <span>{l.name}</span>
+                {l.isNew && <span className="hf-new how-new">New</span>}
                 <Icon name="chevron-right" size={14} className="how-chev" />
               </button>
             </li>
           ))}
         </ol>
-        {built.filter((l) => l.id === open).map((l, i) => (
+        {LAYERS.filter((l) => l.id === open).map((l) => (
           <article key={l.id} className="box how-detail">
-            <span className="eyebrow">Layer {built.indexOf(l) + 1}</span>
+            <span className="eyebrow">Layer {LAYERS.indexOf(l) + 1}</span>
             <h2>{l.name}</h2>
             <p>{l.what}</p>
             <div className="code-ref"><Icon name="file" size={14} /> <code>{l.code}</code></div>
+            {l.id === 'capability' && <CapabilityPlayground />}
+            {l.id === 'grammar' && <GrammarPlayground />}
+            {l.isNew || (
+              <div className="how-try">
+                Try the newest layers live:
+                <button className="chip" onClick={() => setOpen('capability')}><Icon name="key" size={13} /> Capability tokens</button>
+                <button className="chip" onClick={() => setOpen('grammar')}><Icon name="tool" size={13} /> Action grammar</button>
+              </div>
+            )}
           </article>
         ))}
       </div>
-      <section className="box planned">
-        <h3>Planned</h3>
-        <ul>
-          {LAYERS.filter((l) => l.planned).map((l) => <li key={l.id}><b>{l.name}.</b> {l.what}</li>)}
-        </ul>
-      </section>
     </div>
   )
 }

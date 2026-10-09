@@ -22,6 +22,7 @@ from typing import Any, Literal
 import mcp_types as types
 from mcp.client import Client
 
+from vajra.capabilities import CapabilityWallet
 from vajra.config import ToolConfig, UpstreamConfig, VajraConfig
 from vajra.isolation import ContainerSpec
 from vajra.proxy import SERVER_INSTRUCTIONS, UpstreamManager, build_server
@@ -91,6 +92,8 @@ def upstream_configs(outbox: Path) -> dict[str, UpstreamConfig]:
         "mail": cfg("mail", tools={"send_email": ToolConfig(
             untrusted_args=frozenset({"body"}),
             egress=True,
+            # Capability-gated: only recipients the user typed in their own request can receive mail.
+            capability={"to": "email"},
             arg_patterns={"to": r"[A-Za-z0-9._%+-]+@(corp\.example|bluesparrowtech\.com)"},
         )}),
     }
@@ -144,8 +147,16 @@ async def run_scenario(scenario: Scenario, mode: Mode, provider: str, emit: Emit
                     ev("quarantine.output", text=out)
                     return out
 
-                middleware = TaintMiddleware(PolicyEngine(with_quarantine(config)), on_event=lambda e: ev(e.pop("type"), **e),
-                                             trail=TRAIL, session=run_id)
+                policy = PolicyEngine(with_quarantine(config))
+                # Tokens come from the user's own request (trusted), never from anything a tool returned.
+                wallet = CapabilityWallet()
+                minted = wallet.mint_from_request(scenario.task, policy.gated_tools())
+                ev("capability.mint", tokens=wallet.tokens(), gated=sorted(policy.gated_tools()))
+                for cap in minted:
+                    TRAIL.record("capability.mint", session=run_id, tool=cap.tool, token=cap.id,
+                                 bound={k: len(v) for k, v in cap.bindings.items()}, uses=cap.uses)
+                middleware = TaintMiddleware(policy, on_event=lambda e: ev(e.pop("type"), **e),
+                                             trail=TRAIL, session=run_id, wallet=wallet)
                 server = build_server("vajra", upstreams, middleware, QuarantinedReader(reader_complete))
                 proxy = await stack.enter_async_context(Client(server))
                 tools = (await proxy.list_tools()).tools

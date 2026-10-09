@@ -61,6 +61,17 @@ export function buildSummary(events, mode, scenario) {
           add({ icon: 'alert', tone: 'danger', text: 'The hidden text in that content went straight into the AI’s view.' })
         }
         break
+      case 'capability.mint': {
+        if (!ev.gated || !ev.gated.length) break
+        const tok = (ev.tokens || []).find((t) => t.tool === 'mail/send_email')
+        add(tok
+          ? { icon: 'key', tone: 'safe', text: `VAJRA issued a signed token from ${scenario.user_name}'s own request: email may go only to ${tok.bindings.to.join(', ')}.` }
+          : { icon: 'key', tone: 'safe', text: `The request named no recipient, so VAJRA issued no email token: no address is authorised.` })
+        break
+      }
+      case 'proxy.capability':
+        add({ icon: 'key', tone: 'safe', text: 'The recipient matched the token from the user’s request.' })
+        break
       case 'sandbox.isolation': {
         const kinds = [...new Set(Object.values(ev.servers))].filter((k) => k !== 'no isolation')
         if (kinds.length) add({ icon: 'lock', tone: 'safe', text: `The tool servers ran inside an OS sandbox: ${kinds.join('; ')}.` })
@@ -85,10 +96,13 @@ export function buildSummary(events, mode, scenario) {
           pendingMail = null
         }
         break
-      case 'proxy.block':
-        add({ icon: 'ban', tone: 'blocked', text: 'VAJRA blocked an email whose recipient came from outside content. Nothing was sent.' })
+      case 'proxy.block': {
+        const names = { grammar: 'action grammar', policy: 'data-flow policy', capability: 'capability token' }
+        const by = Object.entries(ev.layers || {}).filter(([, why]) => why).map(([k]) => names[k] || k)
+        add({ icon: 'ban', tone: 'blocked', text: `VAJRA blocked an email whose recipient came from outside content. Nothing was sent.${by.length > 1 ? ` Refused independently by ${by.length} layers: ${by.join(' and ')}.` : ''}` })
         pendingMail = null
         break
+      }
       case 'agent.final': {
         const t = (ev.text || '').replace(/\s+/g, ' ').trim()
         add({ icon: 'message', text: `The assistant replied: “${t.length > 160 ? `${t.slice(0, 160)}…` : t}”` })

@@ -195,3 +195,34 @@ html, body { overflow-x: clip; }
   .hs-metric:nth-child(2) { border-right: 0; }
   .hs-metric-value { font-size: 28px; }
 }
+
+/* ------------------------------------------------------------------ layer playgrounds (How it works) */
+.how-new { margin-left: auto; --c: var(--tone-green); --cbg: var(--tone-green-bg); color: var(--c); background: var(--cbg); }
+.how-item .how-new + .how-chev { margin-left: 6px; }
+.how-try { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--muted); }
+.pg { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; padding: 16px; border-radius: 14px; background: var(--code-bg); border: 1px solid var(--border); }
+.pg-step { display: grid; grid-template-columns: 28px 1fr; gap: 12px; }
+.pg-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; background: var(--grad); }
+.pg-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pg-label { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.pg textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong); font: 14px/1.5 var(--font); background: var(--panel); color: var(--text); resize: vertical; }
+.pg textarea.mono, .pg .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.pg-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 99px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font: 600 12.5px var(--font); cursor: pointer; transition: border-color .15s, background .15s; }
+.chip:hover { border-color: var(--info); color: var(--info); }
+.chip.on { border-color: var(--info); background: var(--info-bg); color: var(--info); }
+.pg-token { padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid #a7f3d0; box-shadow: var(--shadow); animation: cv-pop .35s cubic-bezier(.2, 1.3, .4, 1) both; }
+.pg-token-top { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.pg-token-top svg { color: var(--safe); }
+.pg-token dl { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; margin: 10px 0 0; font-size: 13px; }
+.pg-token dt { color: var(--muted); }
+.pg-token dd { margin: 0; overflow-wrap: anywhere; }
+.pg-empty { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--info-bg); color: #1e40af; font-size: 13px; }
+.pg-verdict { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; font-size: 13px; animation: cv-pop .3s cubic-bezier(.2, 1.3, .4, 1) both; overflow-wrap: anywhere; }
+.pg-verdict.ok { background: var(--safe-bg); color: var(--safe-text); border: 1px solid #a7f3d0; }
+.pg-verdict.bad { background: var(--danger-bg); color: var(--danger-text); border: 1px solid #fecaca; }
+.pg-verdict svg { flex: none; margin-top: 1px; }
+.pg-grammar { margin: 0; padding: 12px 14px; border-radius: 10px; background: #0b1220; color: #a5f3fc; font: 12.5px/1.6 ui-monospace, Consolas, monospace; overflow-x: auto; white-space: pre; }
+.pg-caret { color: #fca5a5; }
+.pg-err { margin: 0; color: var(--danger-text); font-size: 13px; }
+.pg-body > .btn { align-self: flex-start; }

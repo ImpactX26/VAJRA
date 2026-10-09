@@ -17,6 +17,7 @@ from mcp.shared.exceptions import MCPError
 from ..quarantine.reader import NATIVE_UPSTREAM, QUARANTINE_TOOL, QUARANTINE_TOOL_NAME, QuarantinedReader, quarantine_tool
 from ..taint.middleware import TaintMiddleware
 from ..taint.policy import PolicyViolation
+from ..grammar import ActionGrammar
 from .upstream import UnknownRouteError, UpstreamManager, exposed_tool_name
 
 
@@ -28,10 +29,25 @@ SERVER_INSTRUCTIONS = (
 
 
 def build_server(
-    name: str, upstreams: UpstreamManager, middleware: TaintMiddleware, reader: QuarantinedReader | None = None
+    name: str, upstreams: UpstreamManager, middleware: TaintMiddleware, reader: QuarantinedReader | None = None,
+    grammar: bool = True,
 ) -> Server[Any]:
     """Build the proxy server. With ``reader``, also expose the quarantine tool (the policy engine must
-    then be built from ``vajra.quarantine.with_quarantine(config)``)."""
+    then be built from ``vajra.quarantine.with_quarantine(config)``). With ``grammar``, every call must
+    match the action grammar generated from the tools exposed here (see ``vajra.grammar``)."""
+    if grammar and middleware.grammar is None:
+        schemas: dict[str, Any] = {}
+        pairs: dict[str, tuple[str, str]] = {}
+        for upstream in upstreams.upstreams.values():
+            for tool in upstream.tools.values():
+                if upstream.config.tool(tool.name).hidden:
+                    continue
+                exposed = exposed_tool_name(upstream.name, tool.name)
+                schemas[exposed], pairs[exposed] = tool.input_schema, (upstream.name, tool.name)
+        if reader is not None:
+            q = quarantine_tool()
+            schemas[q.name], pairs[q.name] = q.input_schema, (NATIVE_UPSTREAM, QUARANTINE_TOOL)
+        middleware.grammar = ActionGrammar(schemas, pairs)
 
     async def list_tools(ctx: Any, params: types.PaginatedRequestParams | None) -> types.ListToolsResult:
         tools: list[types.Tool] = []

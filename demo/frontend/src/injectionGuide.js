@@ -55,17 +55,17 @@ export const LAYERS = [
     id: 'capability',
     name: 'Capability tokens',
     short: 'Tokens',
-    code: 'src/vajra/capabilities (planned)',
-    planned: true,
-    what: 'Each call will need a scoped, unforgeable token minted from trusted user intent. Tokens derived from tainted data carry zero privilege.',
+    code: 'src/vajra/capabilities.py · CapabilityWallet',
+    isNew: true,
+    what: 'At the start of a session VAJRA reads the user’s own request and mints signed tokens for gated tools, for example send_email bound to the exact address the user typed. A gated call runs only if a valid token covers it. Tokens are HMAC-signed with a key the planner never sees, and nothing a tool returns can mint one, so an address that exists only in an attacker’s document has zero privilege.',
   },
   {
     id: 'grammar',
     name: 'Constrained action grammar',
     short: 'Grammar',
-    code: 'src/vajra/grammar (planned)',
-    planned: true,
-    what: 'Planner actions must parse against a strict DSL built from approved tool signatures. Free-form injected language cannot parse as an action.',
+    code: 'src/vajra/grammar.py · ActionGrammar',
+    isNew: true,
+    what: 'A grammar is generated from the tools that passed the admission sandbox. Every action must be exactly one call to an approved tool, with only its declared parameters, each of the right type. Unknown tools, extra parameters, a second smuggled call or free-form prose do not parse, so injected language can never be executed as an action.',
   },
 ]
 
@@ -79,14 +79,14 @@ export const STATUS = {
 }
 
 const CAPABILITY_PLANNED = {
-  status: 'planned',
+  status: 'backstop',
   payload: '—',
-  text: 'A send_email token would be minted from Alice’s request and bound to recipient alice@corp.example. That gives a second, independent reason any attacker-addressed call fails.',
+  text: 'The send_email token is minted from Alice’s request and bound to alice@corp.example. Any call to an attacker’s address fails this check on its own, as a second, independent reason.',
 }
 const GRAMMAR_PLANNED = {
-  status: 'planned',
+  status: 'backstop',
   payload: '—',
-  text: 'Only calls that parse against the approved action grammar would reach the proxy, so injected natural language can never be read as an action.',
+  text: 'Every call is checked against the grammar of approved tools before policy runs, so injected natural language can never be read as an action.',
 }
 
 export const GUIDE = {
@@ -180,7 +180,7 @@ export const GUIDE = {
       propagate: { status: 'transform', payload: 'Address → $vajra:h_166b… (UNTRUSTED)', text: 'The extracted address is UNTRUSTED. Live, gpt-oss-120b then asked the reader to “give the address as plain text”. That produces another untrusted handle, because extraction cannot launder taint.' },
       policy: { status: 'stop', payload: 'send_email(to=handle UNTRUSTED) → BLOCKED', text: 'to is not in untrusted_args, so the call raises a PolicyViolation before the mail server is contacted. The planner falls back to asking Alice to confirm the address, which puts a human back in the loop for the one decision an attacker controls.' },
       context: { status: 'backstop', payload: 'Not triggered (opaque mode)', text: 'In inline mode the planner would see the address directly, but the session would be tainted and the send would still be refused.' },
-      capability: { status: 'planned', payload: '—', text: 'A token minted from Alice’s request could never bind to an address that exists only in untrusted data.' },
+      capability: { status: 'stop', payload: '—', text: 'Alice’s request names no recipient, so no send_email token is minted. The call is refused by this layer too, independently of the data-flow policy.' },
       grammar: GRAMMAR_PLANNED,
     },
     verdict: 'Stopped at the policy layer. This is the attack content-based classifiers miss, and VAJRA blocks it on information flow alone.',

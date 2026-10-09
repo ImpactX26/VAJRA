@@ -54,6 +54,9 @@ class ToolConfig:
     sanitize: str | None = None
     """Content sandbox for this tool's output. ``"html"`` burns everything a person would not see on the page
     (hidden elements, comments, scripts, invisible characters) before anything else handles it."""
+    capability: dict[str, str] = field(default_factory=dict)
+    """Capability-gated tool: argument -> binding kind ("email", "url"). A call needs a token minted from the
+    user's own request, binding each listed argument to a value the user actually wrote."""
     pin: str | None = None
     """Expected fingerprint of the tool definition (see ``vajra --print-pins``). A mismatch, from a
     poisoned description or a silently changed schema ("rug pull"), drops the tool before the planner sees it."""
@@ -134,5 +137,6 @@ def _parse_tool(body: dict[str, Any]) -> ToolConfig:
         arg_patterns=dict(body.get("arg_patterns", {})),
         secret_when=dict(body.get("secret_when", {})),
         sanitize=body.get("sanitize"),
+        capability=dict(body.get("capability", {})),
         pin=body.get("pin"),
     )

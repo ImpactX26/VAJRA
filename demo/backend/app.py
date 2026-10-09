@@ -302,6 +302,35 @@ async def convert_file(request: Request) -> Response:
     return FileResponse(path, media_type=media, filename=name)
 
 
+async def capability_mint(request: Request) -> JSONResponse:
+    from . import playground
+
+    body = await request.json()
+    return JSONResponse(playground.mint(str(body.get("request", ""))[:2000]))
+
+
+async def capability_check(request: Request) -> JSONResponse:
+    from . import playground
+
+    body = await request.json()
+    args = body.get("args") if isinstance(body.get("args"), dict) else {}
+    return JSONResponse(playground.check(str(body.get("session", "")), str(body.get("tool", "mail/send_email")), args,
+                                         str(body["token"]) if body.get("token") else None))
+
+
+async def grammar_info(request: Request) -> JSONResponse:
+    from . import playground
+
+    return JSONResponse(await playground.grammar_info())
+
+
+async def grammar_parse(request: Request) -> JSONResponse:
+    from . import playground
+
+    body = await request.json()
+    return JSONResponse(await playground.parse(str(body.get("text", ""))[:5000]))
+
+
 async def selftest(request: Request) -> JSONResponse:
     """Run one deterministic check per threat against the live policy, and audit the outcome."""
     from .selftest import run_selftest
@@ -357,6 +386,10 @@ def create_app() -> Starlette:
         Route("/api/audit/export", audit_export),
         Route("/api/audit/stream", audit_stream),
         Route("/api/selftest", selftest),
+        Route("/api/capabilities/mint", capability_mint, methods=["POST"]),
+        Route("/api/capabilities/check", capability_check, methods=["POST"]),
+        Route("/api/grammar", grammar_info),
+        Route("/api/grammar/parse", grammar_parse, methods=["POST"]),
         Route("/api/convert/status", convert_status),
         Route("/api/convert", convert_run, methods=["POST"]),
         Route("/api/convert/file/{token}", convert_file),

@@ -8,7 +8,8 @@ Two rules, both pure functions of labels and operator config:
    to call a tool is attacker-influenced, so only tools marked
    ``allow_tainted_invocation`` may be called at all.
 
-Capability tokens (see ``vajra.capabilities``) will layer on top of this.
+Capability tokens (``vajra.capabilities``) and the action grammar (``vajra.grammar``) are enforced
+alongside these rules by the middleware.
 """
 
 from __future__ import annotations
@@ -72,6 +73,13 @@ class PolicyEngine:
                 raise PolicyViolation(
                     f"{upstream}/{tool}: argument {arg!r} does not match its allowed format"
                 )
+
+    def capability_spec(self, upstream: str, tool: str) -> dict[str, str]:
+        """Arguments of a capability-gated tool and how they bind to the user's request (empty = not gated)."""
+        return self._config.upstreams[upstream].tool(tool).capability
+
+    def gated_tools(self) -> dict[str, dict[str, str]]:
+        return {f"{u}/{t}": dict(c.capability) for u, up in self._config.upstreams.items() for t, c in up.tools.items() if c.capability}
 
     def sanitizer(self, upstream: str, tool: str) -> str | None:
         """Which content sandbox (if any) this tool's output goes through."""

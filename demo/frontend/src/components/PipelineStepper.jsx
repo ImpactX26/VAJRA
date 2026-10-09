@@ -5,12 +5,14 @@ import { Icon } from './Icon.jsx'
 
 const PROTECTED = [
   { id: 'request', label: 'Request', icon: 'user', help: 'The user asks the assistant to do something.' },
+  { id: 'token', label: 'Token', icon: 'key', help: 'VAJRA reads the user’s own request and issues signed capability tokens, e.g. send email only to the address the user typed.' },
   { id: 'isolate', label: 'Isolate', icon: 'monitor', help: 'Tool servers start inside an OS sandbox (Job Object or Windows Sandbox VM).' },
   { id: 'fetch', label: 'Fetch', icon: 'globe', help: 'The tool runs inside the sandbox and returns its raw output to VAJRA.' },
   { id: 'sanitize', label: 'Sanitize', icon: 'flame', help: 'Everything a person could not see (hidden elements, comments, invisible characters) is burned.' },
   { id: 'seal', label: 'Seal', icon: 'lock', help: 'The output is labelled untrusted and replaced by a sealed reference. The AI never sees the text.' },
   { id: 'reader', label: 'Reader', icon: 'flask', help: 'A separate AI with no tools reads the sealed content and produces a summary, which stays untrusted.' },
-  { id: 'policy', label: 'Policy', icon: 'shield-check', help: 'Fixed rules decide which data may flow into which action. Unsafe actions are blocked.' },
+  { id: 'grammar', label: 'Grammar', icon: 'tool', help: 'Every action must be a well-formed call to an approved tool. Free text can never become an action.' },
+  { id: 'policy', label: 'Policy', icon: 'shield-check', help: 'Fixed rules and capability tokens decide which data may flow into which action. Unsafe actions are blocked.' },
   { id: 'deliver', label: 'Deliver', icon: 'inbox', help: 'The safe result reaches the user.' },
 ]
 
@@ -28,6 +30,8 @@ function progress(events, mode) {
   for (const e of events) {
     const t = e.type
     if (t === 'run.start') reached.add('request')
+    if (t === 'capability.mint') reached.add('token')
+    if (t === 'proxy.grammar') reached.add('grammar')
     if (t === 'sandbox.isolation') reached.add('isolate')
     if (t === 'mcp.call' && !e.tool.endsWith('send_email') && e.tool !== 'vajra__quarantine') reached.add('fetch')
     if (t === 'mcp.result' && mode === 'unprotected') reached.add('read')
@@ -36,6 +40,7 @@ function progress(events, mode) {
     if (t === 'quarantine.input' || t === 'quarantine.output') reached.add('reader')
     if (t === 'proxy.allow' && e.tool === 'mail/send_email') reached.add('policy')
     if (t === 'proxy.block') {
+      reached.add('grammar')
       reached.add('policy')
       blocked = true
     }

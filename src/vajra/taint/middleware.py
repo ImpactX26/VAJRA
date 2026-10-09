@@ -18,6 +18,8 @@ import mcp_types as types
 
 from ..config import Delivery
 from ..audit import AuditLog, fingerprint
+from ..capabilities import CapabilityError, CapabilityWallet
+from ..grammar import ActionGrammar, GrammarError
 from ..sandbox import sanitize_html
 from .labels import TRUSTED, Integrity, Label
 from .policy import PolicyEngine, PolicyViolation
@@ -42,6 +44,8 @@ class TaintMiddleware:
         on_event: EventSink | None = None,
         trail: AuditLog | None = None,
         session: str | None = None,
+        wallet: CapabilityWallet | None = None,
+        grammar: ActionGrammar | None = None,
     ):
         self.policy = policy
         self.delivery = delivery
@@ -50,6 +54,10 @@ class TaintMiddleware:
         self.trail = trail
         """Tamper-evident audit trail (metadata only; never untrusted content)."""
         self.session = session or secrets.token_hex(4)
+        self.wallet = wallet
+        """Capability tokens minted from the user's request. ``None`` disables capability gating."""
+        self.grammar = grammar
+        """Action grammar built from the admitted tools (``build_server`` sets it). ``None`` disables it."""
         self.context: Label = TRUSTED
         """Label of everything the planner has observed. Monotone: it only ever rises."""
         self.withheld: list[dict[str, Any]] = []
@@ -61,7 +69,14 @@ class TaintMiddleware:
     ) -> types.CallToolResult:
         qualified = f"{upstream}/{tool}"
         arg_labels: dict[str, Label] = {}
+        resolved: dict[str, Any] | None = None
         try:
+            if self.grammar is not None:
+                name = self.grammar.name_for(upstream, tool)
+                if name is None:
+                    raise GrammarError(f"{qualified} is not an approved tool")
+                self.grammar.validate(name, arguments or {})
+                self._emit("grammar", tool=qualified, ok=True)
             resolved, arg_labels = self.store.resolve_arguments(arguments)
             self._emit(
                 "resolve",
@@ -72,9 +87,13 @@ class TaintMiddleware:
             )
             self.policy.check_call(upstream, tool, arg_labels, self.context)
             self.policy.check_values(upstream, tool, resolved)
-        except (PolicyViolation, UnknownHandleError) as e:
+            if self.wallet is not None and self.policy.capability_spec(upstream, tool):
+                cap = self.wallet.check(qualified, resolved)
+                self._emit("capability", tool=qualified, token=cap.id, ok=True)
+                self._audit("capability.use", tool=qualified, token=cap.id)
+        except (PolicyViolation, UnknownHandleError, GrammarError, CapabilityError) as e:
             audit.warning("BLOCK tool=%s reason=%s", qualified, e)
-            self._emit("block", tool=qualified, reason=str(e))
+            self._emit("block", tool=qualified, reason=str(e), layers=self._layer_verdicts(upstream, tool, arguments, resolved, arg_labels))
             self.blocked.append({"tool": qualified, "reason": str(e)})
             self._audit("block", tool=qualified, reason=str(e), arg_labels=_labels(arg_labels))
             return _blocked(str(e))
@@ -172,6 +191,35 @@ class TaintMiddleware:
             "burned": list(self.burned),
             "notice": security_notice(self.withheld, self.blocked, not self.context.trusted, self.burned),
         }
+
+    def _layer_verdicts(self, upstream: str, tool: str, arguments: dict[str, Any] | None,
+                        resolved: dict[str, Any] | None, arg_labels: dict[str, Label]) -> dict[str, str | None]:
+        """Each enforcing layer's own verdict on a refused call, evaluated independently (nothing consumed),
+        so a block shows every layer that would have stopped it, not only the first."""
+        out: dict[str, str | None] = {}
+        if self.grammar is not None:
+            try:
+                name = self.grammar.name_for(upstream, tool)
+                if name is None:
+                    raise GrammarError(f"{upstream}/{tool} is not an approved tool")
+                self.grammar.validate(name, arguments or {})
+                out["grammar"] = None
+            except GrammarError as e:
+                out["grammar"] = str(e)
+        if resolved is not None:
+            try:
+                self.policy.check_call(upstream, tool, arg_labels, self.context)
+                self.policy.check_values(upstream, tool, resolved)
+                out["policy"] = None
+            except PolicyViolation as e:
+                out["policy"] = str(e)
+            if self.wallet is not None and self.policy.capability_spec(upstream, tool):
+                try:
+                    self.wallet.check(f"{upstream}/{tool}", resolved, consume=False)
+                    out["capability"] = None
+                except CapabilityError as e:
+                    out["capability"] = str(e)
+        return out
 
     def withholds(self, output: Integrity) -> bool:
         """Whether output of this integrity is replaced by a handle (so an output schema can't be honoured)."""
